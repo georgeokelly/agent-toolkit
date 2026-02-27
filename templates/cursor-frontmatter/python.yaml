@@ -1,0 +1,2 @@
+description: Python coding standards — typing, style, testing, error handling
+globs: "**/*.py"

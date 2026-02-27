@@ -1,0 +1,2 @@
+description: PyBind11 binding conventions — module structure, exception handling, numpy
+globs: "**/bindings/**"

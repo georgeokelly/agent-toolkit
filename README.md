@@ -1,0 +1,299 @@
+# AI Agent Rule System / AI 代理规则系统
+
+A modular, cross-tool rule system for AI coding agents (Cursor, OpenAI Codex, Claude Code).
+
+一套模块化、跨工具的 AI 编程代理规则系统，适用于 Cursor、OpenAI Codex 和 Claude Code。
+
+---
+
+## 1. Overview / 概述
+
+This rule system replaces a single monolithic AGENTS file with a **3-layer architecture**:
+
+本系统将单一的巨型 AGENTS 文件重构为 **3 层架构**：
+
+| Layer / 层级 | Content / 内容 | Loading / 加载方式 | Budget / 规模 |
+|---|---|---|---|
+| **Core** (core/) | Workflow, communication, quality gates / 工作流、沟通规范、质量门槛 | Always loaded / 始终加载 | ~250 lines |
+| **Language Packs** (packs/) | Python, C++, CUDA, PyBind11, Markdown | By file type / 按文件类型 | ~150 lines each |
+| **Project Overlay** (.agent-local.md) | Project structure, build cmds, boundaries / 项目结构、构建命令、边界 | Per project / 按项目 | ~100-200 lines |
+
+**Why this structure? / 为什么这样设计？**
+
+- Avoid wasting tokens on irrelevant rules (e.g., CUDA rules when editing Python) / 避免加载无关规则浪费 token
+- Prevent cross-language contamination (e.g., C++ naming conventions leaking into Python) / 防止跨语言规范污染
+- Keep each file focused with high instruction density / 每个文件专注且指令密度高
+- Stay within Codex's 32KiB limit / 确保不超过 Codex 的 32KiB 限制
+
+---
+
+## 2. Directory Structure / 目录结构
+
+```
+agent-rules/                     ← This repo / 本仓库 (deployed to ~/.config/agent-rules/)
+├── core/                        ← Always loaded / 始终加载
+│   ├── 00-communication.md      # Output format, language, citations / 输出格式、语言、引用规范
+│   ├── 10-workflow.md           # 3-stage workflow + fast track / 三阶段工作流 + 快速通道
+│   └── 20-quality-gates.md      # Review checklist, doc standards / 审查清单、文档标准
+│
+├── packs/                       ← Loaded by file type / 按文件类型加载
+│   ├── python.md                # Python 3.10+ rules / Python 规范
+│   ├── cpp.md                   # C++17 rules / C++ 规范
+│   ├── cuda.md                  # CUDA kernel rules / CUDA 规范
+│   ├── pybind11.md              # PyBind11 bindings / PyBind11 绑定规范
+│   └── markdown.md              # Markdown writing / Markdown 写作规范
+│
+├── templates/
+│   ├── overlay-template.md      # Template for .agent-local.md / 项目特定规则模板
+│   └── cursor-frontmatter/      # YAML frontmatter for .mdc / Cursor 前置元数据
+│       ├── communication.yaml   # alwaysApply: true
+│       ├── workflow.yaml        # alwaysApply: true
+│       ├── python.yaml          # globs: "**/*.py"
+│       ├── cpp.yaml             # globs: "**/*.{cpp,h,hpp,cc}"
+│       ├── cuda.yaml            # globs: "**/*.{cu,cuh,h,hpp}"
+│       ├── pybind11.yaml        # globs: "**/bindings/**"
+│       └── markdown.yaml        # globs: "**/*.md"
+│
+├── scripts/
+│   ├── agent-sync.sh            # Sync rules to project / 同步规则到项目
+│   └── agent-check.sh           # Validate generated files / 验证生成文件
+│
+└── README.md                    # This file / 本文件
+```
+
+---
+
+## 3. Quick Start / 快速开始
+
+### First-Time Setup / 首次设置
+
+```bash
+# 1. Deploy this repo as your central rules repo
+#    将本仓库部署为中央规则仓库
+mkdir -p ~/.config/agent-rules
+cp -r core/ packs/ templates/ scripts/ ~/.config/agent-rules/
+
+# 2. (Optional) Initialize as git repo for version tracking
+#    （可选）初始化为 git 仓库以追踪版本
+cd ~/.config/agent-rules && git init && git add . && git commit -m "Initial rules"
+
+# 3. Add shell alias
+#    添加 shell 别名
+echo 'alias agent-sync="~/.config/agent-rules/scripts/agent-sync.sh"' >> ~/.zshrc
+echo 'alias agent-check="~/.config/agent-rules/scripts/agent-check.sh"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### Per-Project Setup / 项目设置
+
+```bash
+# 1. Go to your project
+#    进入项目目录
+cd ~/workspace/my-project
+
+# 2. Create project-specific rules from template
+#    从模板创建项目特定规则
+cp ~/.config/agent-rules/templates/overlay-template.md .agent-local.md
+# Edit .agent-local.md — fill in project structure, build commands, etc.
+# 编辑 .agent-local.md — 填写项目结构、构建命令等
+
+# 3. Sync rules (generates .cursor/rules/*.mdc, CLAUDE.md, AGENTS.md)
+#    同步规则（生成各工具的配置文件）
+agent-sync .
+
+# 4. Validate
+#    验证
+agent-check .
+
+# 5. Add generated files to .gitignore
+#    将生成文件加入 .gitignore
+echo -e '\n# AI agent rules (generated)\nCLAUDE.md\nAGENTS.md\n.cursor/rules/\n.agent-sync-hash' >> .gitignore
+
+# 6. Commit .agent-local.md (project-specific rules belong in git)
+#    提交 .agent-local.md（项目特定规则应进入 git）
+git add .agent-local.md .gitignore
+```
+
+### Daily Usage / 日常使用
+
+```bash
+cd ~/workspace/my-project
+agent-sync .    # Check + sync if needed (usually instant) / 检查 + 按需同步（通常瞬间完成）
+cursor .        # Or: codex / claude / 启动任一 AI 工具
+```
+
+Or combine into one command / 或合并为一条命令:
+
+```bash
+# Add to ~/.zshrc:
+cursor-go() { agent-sync "${1:-.}" && cursor "${1:-.}"; }
+```
+
+---
+
+## 4. Tool-Specific Deployment / 各工具部署说明
+
+### Cursor
+
+`agent-sync` generates `.cursor/rules/*.mdc` files with YAML frontmatter. Cursor reads these automatically:
+
+`agent-sync` 会生成带有 YAML 前置元数据的 `.cursor/rules/*.mdc` 文件。Cursor 自动读取：
+
+- `alwaysApply: true` — loaded in ALL modes (Agent, Ask, Chat) / 在所有模式下加载
+- `globs: "**/*.py"` — loaded only when editing matching files / 仅在编辑匹配文件时加载
+- `description: "..."` — Cursor uses AI to decide relevance / Cursor 用 AI 判断相关性
+
+**Known Pitfalls / 已知坑点:**
+
+1. **Missing closing `---`**: If YAML frontmatter is not properly closed, the rule **silently fails** — no error, no warning. `agent-check` validates this. / 如果 YAML 前置元数据没有正确闭合 `---`，规则会**静默失效**。`agent-check` 会检查这一点。
+2. **`.cursorrules` conflict**: If both `.cursorrules` and `.cursor/rules/*.mdc` exist, `.mdc` may silently override. Use only `.mdc`. / 如果同时存在 `.cursorrules` 和 `.mdc`，`.mdc` 可能静默覆盖。只使用 `.mdc`。
+3. **Injection vs Activation**: `alwaysApply: true` guarantees injection into context, but does not guarantee the model will follow every instruction. This is a fundamental limitation of prompt-based rules. / `alwaysApply: true` 保证注入上下文，但不保证模型一定遵循每条指令。这是基于 prompt 的规则的根本局限。
+
+### OpenAI Codex
+
+`agent-sync` generates a single `AGENTS.md` at the project root.
+
+`agent-sync` 在项目根目录生成单个 `AGENTS.md`。
+
+**Critical: 32KiB Limit / 关键：32KiB 限制**
+
+Codex has a `project_doc_max_bytes` default of **32,768 bytes**. Content beyond this limit is **silently truncated** — you get no error or warning. `agent-check` validates file size.
+
+Codex 的 `project_doc_max_bytes` 默认为 **32,768 字节**。超出此限制的内容会被**静默截断** — 没有任何错误或警告。`agent-check` 会检查文件大小。
+
+Codex also supports subdirectory `AGENTS.md` files for layered rules. If your project structure is large, consider splitting packs into subdirectories.
+
+Codex 也支持子目录的 `AGENTS.md` 文件来分层加载规则。如果项目结构很大，可以考虑将 packs 拆分到子目录。
+
+### Claude Code
+
+`agent-sync` generates a single `CLAUDE.md` at the project root.
+
+`agent-sync` 在项目根目录生成单个 `CLAUDE.md`。
+
+**How Claude Code loads rules / Claude Code 的规则加载方式：**
+
+- Root `CLAUDE.md`: loaded automatically at startup / 启动时自动加载
+- Subdirectory `CLAUDE.md`: loaded when Claude works in that directory / 在该目录工作时按需加载
+- `~/.claude/CLAUDE.md`: personal global rules (apply to all projects) / 个人全局规则（适用于所有项目）
+- `CLAUDE.local.md`: auto-gitignored, for private project preferences / 自动加入 .gitignore，用于私有项目偏好
+
+**Tip / 提示**: Put your language preference (e.g., "Always respond in Chinese") in `~/.claude/CLAUDE.md` so it applies everywhere. / 把语言偏好（如"始终用中文回复"）放在 `~/.claude/CLAUDE.md` 中，这样所有项目都会生效。
+
+---
+
+## 5. Validation Checklist / 验证清单
+
+Run `agent-check .` in your project directory. It checks:
+
+在项目目录中运行 `agent-check .`，它会检查：
+
+| Check / 检查项 | What it validates / 验证内容 |
+|---|---|
+| Codex size | `AGENTS.md` < 32KiB (silent truncation risk) / 是否低于 32KiB |
+| Cursor frontmatter | Every `.mdc` has opening and closing `---` / 每个 `.mdc` 的 YAML 是否闭合 |
+| No dual-write | `.cursorrules` and `.mdc` don't coexist / 没有同时存在 `.cursorrules` 和 `.mdc` |
+| Staleness | Generated files match rules repo version / 生成文件是否与规则仓库版本一致 |
+| File existence | All expected files present / 所有预期文件是否存在 |
+
+---
+
+## 6. Evaluation Criteria / 评价标准
+
+Use these 5 criteria to judge if the rule system is working effectively:
+
+用以下 5 个标准来评判规则系统是否有效运作：
+
+1. **Executability / 可执行性**: Agent can immediately determine "what to do next, where to edit, how to verify" / Agent 能立即判断"下一步做什么、去哪改、怎么验收"
+2. **Consistency / 一致性**: Same task produces similar behavior across Cursor, Codex, and Claude Code / 同一任务在三个工具中产出一致的行为
+3. **Instruction Density / 指令密度**: High ratio of actionable constraints per 1k tokens (not tutorials) / 每 1k token 中可执行约束的占比高（而不是教程）
+4. **Maintainability / 可维护性**: Updating one rule auto-propagates to all tools; no "ghost rules" / 更新一条规则后自动传播到所有工具，不会出现"幽灵规则"
+5. **Verifiability / 可验证性**: Can check if rules loaded, not truncated, not conflicting / 能验证规则是否加载、未被截断、没有冲突
+
+---
+
+## 7. Regression Testing / 回归测试
+
+After modifying rules, test with these fixed tasks across all 3 tools:
+
+修改规则后，用以下固定任务在 3 个工具上测试：
+
+1. **Python**: "Add a `normalize_tensor` function to `core.py` with type hints and a pytest test" / 添加一个带类型标注的函数和测试
+2. **C++**: "Add a new `Reshape` method to `ComputeEngine` with Google Test" / 为类添加新方法和 Google Test
+3. **CUDA**: "Add a new elementwise kernel with CUDA_CHECK and stream support" / 添加一个带错误检查和 stream 的新 kernel
+4. **PyBind11**: "Expose the new Reshape method to Python" / 将新方法暴露给 Python
+5. **Bug fix**: "The batch processing crashes on empty input — find and fix" / 修复一个空输入的崩溃
+6. **Refactor**: "Extract the memory management code into a separate utility class" / 将内存管理代码提取为独立工具类
+7. **Ask mode**: "How does the MatMul kernel handle non-square matrices?" (expect citations) / 问答模式：解释 kernel 如何处理非方阵（期望有引用）
+8. **Small fix**: "Fix the typo in the docstring of train_model" (expect Fast Track) / 修复一个 typo（期望使用快速通道）
+
+**Pass criteria / 通过标准**: All 3 tools produce structurally similar output, follow the correct workflow stage, and respect MUST-level rules.
+
+所有 3 个工具产出结构相似的输出，遵循正确的工作流阶段，并遵守 MUST 级别规则。
+
+---
+
+## 8. Size Budget / 规模预算
+
+| Component / 组件 | Target / 目标 | Hard Limit / 硬限制 |
+|---|---|---|
+| Global Core (all 3 files) | ~250 lines | — |
+| Each Language Pack | ~100-150 lines | — |
+| Project Overlay | ~100-200 lines | — |
+| Assembled AGENTS.md | — | **32,768 bytes** (Codex) |
+| Assembled CLAUDE.md | — | No hard limit (but shorter is better) |
+
+---
+
+## 9. Maintenance / 维护指南
+
+### When to re-run `agent-sync` / 何时重新同步
+
+| Trigger / 触发条件 | Action / 操作 |
+|---|---|
+| Modified any file in `~/.config/agent-rules/` / 修改了规则仓库中的任何文件 | `agent-sync .` in each project / 在每个项目中运行 |
+| First time setting up a project / 首次设置项目 | `agent-sync .` |
+| Generated files accidentally deleted / 生成文件被意外删除 | `agent-sync .` |
+| Nothing changed / 没有变化 | Script auto-detects and skips / 脚本自动检测并跳过 |
+
+### How to update rules / 如何更新规则
+
+1. Edit the source file in `~/.config/agent-rules/` (e.g., `packs/python.md`) / 编辑规则仓库中的源文件
+2. (If git) Commit the change / 提交变更
+3. Run `agent-sync .` in each active project / 在每个活跃项目中运行同步
+4. Run `agent-check .` to validate / 运行检查脚本验证
+5. (Optional) Run a regression test task to verify behavior / （可选）运行回归测试任务验证行为
+
+---
+
+## 10. FAQ / 常见问题
+
+**Q: Do rules apply in Cursor's Ask/Chat mode? / 规则在 Cursor 的 Ask/Chat 模式下生效吗？**
+
+Yes. Rules with `alwaysApply: true` (like `00-communication.md`) apply in ALL modes. Rules with `globs` apply when the relevant file is in context.
+
+是的。`alwaysApply: true` 的规则（如 `00-communication.md`）在所有模式下生效。`globs` 规则在相关文件在上下文中时生效。
+
+**Q: My Cursor rules don't seem to work. / Cursor 规则似乎不生效。**
+
+Run `agent-check .` first. Most common cause: unclosed `---` in frontmatter. Also check for `.cursorrules` file conflicts.
+
+先运行 `agent-check .`。最常见原因：frontmatter 中 `---` 未闭合。也要检查是否有 `.cursorrules` 文件冲突。
+
+**Q: Can I customize rules per tool? / 可以按工具自定义规则吗？**
+
+The core rules and language packs are shared across tools. Tool-specific behavior differences are handled in `10-workflow.md` via the Tool Adaptation Matrix. If you need completely different rules per tool, modify `agent-sync.sh` to generate different content.
+
+核心规则和语言包在所有工具间共享。工具特定的行为差异在 `10-workflow.md` 的"工具适配矩阵"中处理。如果需要完全不同的规则，修改 `agent-sync.sh` 生成不同内容。
+
+**Q: Should `.agent-local.md` be committed to git? / `.agent-local.md` 应该提交到 git 吗？**
+
+Yes. It contains project-specific rules that the whole team (and all AI tools) should follow. For personal preferences (local paths, API keys), Claude Code users can use `CLAUDE.local.md` (auto-gitignored).
+
+是的。它包含整个团队（和所有 AI 工具）都应遵循的项目特定规则。个人偏好（本地路径、API 密钥）可以放在 Claude Code 的 `CLAUDE.local.md`（自动加入 .gitignore）中。
+
+**Q: What if AGENTS.md exceeds 32KiB? / AGENTS.md 超过 32KiB 怎么办？**
+
+Split language packs into subdirectory `AGENTS.md` files (e.g., `python/AGENTS.md`). Codex merges them hierarchically. Or reduce rule content — review for tutorial-style code that can be moved to `docs/examples/`.
+
+将语言包拆分为子目录的 `AGENTS.md` 文件（如 `python/AGENTS.md`）。Codex 会层级合并。或者精简规则内容 — 检查是否有教程式代码可以移到 `docs/examples/`。

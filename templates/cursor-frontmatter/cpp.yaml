@@ -1,0 +1,2 @@
+description: C++ coding standards — naming, ownership, exceptions, modern features
+globs: "**/*.{cpp,h,hpp,cc}"

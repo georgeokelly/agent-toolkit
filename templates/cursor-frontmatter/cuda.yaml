@@ -1,0 +1,2 @@
+description: CUDA kernel requirements — error checking, streams, performance, Tensor Core
+globs: "**/*.{cu,cuh,h,hpp}"

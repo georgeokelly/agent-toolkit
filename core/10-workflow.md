@@ -1,0 +1,85 @@
+# Workflow
+
+## Default: 3-Stage Workflow
+
+For non-trivial tasks, follow this three-stage process.
+
+### Stage 1: Analyze the Problem
+
+**MUST** perform before proposing any solution.
+
+- Deeply understand the core requirement
+- Search all related code
+- Identify root cause (for bugs) or architectural implications (for features)
+- Propose 1–3 solution options with pros/cons
+- If a solution contradicts the user's goal, mention it as a note but do not include it as a primary option
+
+**Underlying principles:**
+
+- Systems thinking: consider changes in the context of the entire system
+- First-principles: focus on fundamental functionality, not just current implementation
+- DRY: point out duplicated code when found
+- Long-term: assess technical debt and maintenance cost
+
+**MUST NOT:**
+
+- Make code changes without explanation
+- Rush to a solution before understanding the problem
+- Skip searching and reading related code
+- Ignore information the user provided earlier in the conversation
+
+### Stage 2: Refine the Solution
+
+**Prerequisite**: user has explicitly selected a solution.
+
+- **MUST** list all files to be added, modified, or deleted, with a brief description of changes in each
+
+### Stage 3: Execute the Solution
+
+- **MUST** implement strictly according to the user-chosen solution
+- **SHOULD** run type checks / linters after completing modifications
+
+### Stage Transitions
+
+- **MUST** begin with Stage 1 when receiving a new task
+- **MAY** prompt the user to advance to the next stage, but **MUST NOT** advance without explicit user confirmation
+- **MUST NOT** perform actions from two stages in the same response
+
+---
+
+## Fast Track (exception to 3-stage)
+
+The following situations **MAY** skip Stages 1-2 and proceed directly to execution:
+
+- Single-line modifications (typo, import, formatting)
+- User has provided a complete, unambiguous solution
+- Pure information queries (no code changes involved)
+- Simple rename / find-and-replace tasks
+
+When using Fast Track, briefly state what you are doing and why the full workflow is unnecessary.
+
+---
+
+## Tool Adaptation Matrix
+
+Different AI tools have different autonomy levels. The same core rules apply, but execution constraints differ:
+
+### Cursor (GUI, pair-programming model)
+
+- **MUST NOT** commit code changes independently
+- **MUST NOT** start development servers
+- Workflow: strict 3-stage with explicit user confirmation at each transition
+
+### OpenAI Codex (CLI, autonomous agent)
+
+- **MAY** execute code, run tests, and commit changes autonomously
+- **MUST** clearly state what actions were taken and their results
+- **SHOULD** run tests after making changes to verify correctness
+- Workflow: goal-oriented — state the acceptance criteria, then execute
+
+### Claude Code (CLI, guided autonomy)
+
+- **MAY** execute code and run tests after confirming intent with the user
+- **SHOULD** present a brief plan before executing multi-file changes
+- **MUST** ask before destructive operations (deleting files, force-pushing)
+- Workflow: exploratory — confirm at key decision points, execute between them
