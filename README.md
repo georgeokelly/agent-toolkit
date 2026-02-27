@@ -51,7 +51,7 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │       ├── python.yaml          # globs: "**/*.py"
 │       ├── cpp.yaml             # globs: "**/*.{cpp,h,hpp,cc}"
 │       ├── cuda.yaml            # globs: "**/*.{cu,cuh,h,hpp}"
-│       ├── pybind11.yaml        # globs: "**/bindings/**"
+│       ├── pybind11.yaml        # description-based (AI decides relevance)
 │       └── markdown.yaml        # globs: "**/*.md"
 │
 ├── scripts/
@@ -195,6 +195,8 @@ Run `agent-check .` in your project directory. It checks:
 | No dual-write | `.cursorrules` and `.mdc` don't coexist / 没有同时存在 `.cursorrules` 和 `.mdc` |
 | Staleness | Generated files match rules repo version / 生成文件是否与规则仓库版本一致 |
 | File existence | All expected files present / 所有预期文件是否存在 |
+| Core semantics | Core `.mdc` files have `alwaysApply: true` / Core 文件必须始终加载 |
+| Settings validity | `.vscode/settings.json` is valid JSON (if present) / 配置文件 JSON 有效性 |
 
 ---
 

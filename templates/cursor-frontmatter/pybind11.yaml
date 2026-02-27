@@ -1,2 +1,1 @@
-description: PyBind11 binding conventions — module structure, exception handling, numpy
-globs: "**/bindings/**"
+description: PyBind11 binding conventions — use when editing C++/Python binding code, pybind11 modules, or files that expose C++ APIs to Python

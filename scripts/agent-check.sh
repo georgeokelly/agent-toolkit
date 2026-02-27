@@ -10,6 +10,8 @@ set -euo pipefail
 #   3. No .cursorrules + .mdc dual-write conflict
 #   4. Staleness (rules repo newer than generated files)
 #   5. File existence (all expected files present)
+#   6. Core .mdc semantic validation (alwaysApply must be true)
+#   7. .vscode/settings.json validity (if exists)
 
 RULES_HOME="${AGENT_RULES_HOME:-$HOME/.config/agent-rules}"
 PROJECT_DIR="${1:-.}"
@@ -30,7 +32,7 @@ echo "================================"
 # --- 1. Codex AGENTS.md size ---
 
 echo ""
-echo "[1/5] Codex AGENTS.md size limit"
+echo "[1/7] Codex AGENTS.md size limit"
 
 if [ -f "$PROJECT_DIR/AGENTS.md" ]; then
     SIZE=$(wc -c < "$PROJECT_DIR/AGENTS.md" | tr -d ' ')
@@ -47,7 +49,7 @@ fi
 # --- 2. Cursor frontmatter lint ---
 
 echo ""
-echo "[2/5] Cursor .mdc frontmatter validation"
+echo "[2/7] Cursor .mdc frontmatter validation"
 
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     MDC_COUNT=0
@@ -84,7 +86,7 @@ fi
 # --- 3. No dual-write conflict ---
 
 echo ""
-echo "[3/5] Cursor dual-write conflict check"
+echo "[3/7] Cursor dual-write conflict check"
 
 if [ -f "$PROJECT_DIR/.cursorrules" ] && [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     warn ".cursorrules AND .cursor/rules/ both exist. .mdc files may silently override .cursorrules. Remove one."
@@ -95,7 +97,7 @@ fi
 # --- 4. Staleness check ---
 
 echo ""
-echo "[4/5] Staleness detection"
+echo "[4/7] Staleness detection"
 
 if [ -d "$RULES_HOME/.git" ] && [ -f "$HASH_FILE" ]; then
     CURRENT_HASH="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "unknown")"
@@ -115,7 +117,7 @@ fi
 # --- 5. File existence ---
 
 echo ""
-echo "[5/5] Generated file existence"
+echo "[5/7] Generated file existence"
 
 EXPECTED_FILES=("CLAUDE.md" "AGENTS.md")
 for f in "${EXPECTED_FILES[@]}"; do
@@ -130,6 +132,55 @@ if [ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls "$PROJECT_DIR/.cursor/rules/"*
     pass ".cursor/rules/ contains .mdc files"
 else
     fail ".cursor/rules/ is empty or missing"
+fi
+
+# --- 6. Core .mdc semantic validation ---
+
+echo ""
+echo "[6/7] Core .mdc alwaysApply validation"
+
+CORE_PATTERNS=("00-communication" "10-workflow" "20-quality-gates")
+if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
+    CORE_OK=true
+    for pattern in "${CORE_PATTERNS[@]}"; do
+        mdc="$PROJECT_DIR/.cursor/rules/${pattern}.mdc"
+        if [ -f "$mdc" ]; then
+            if grep -q 'alwaysApply: true' "$mdc"; then
+                pass "${pattern}.mdc has alwaysApply: true"
+            else
+                fail "${pattern}.mdc is missing alwaysApply: true (core rules must always load)"
+                CORE_OK=false
+            fi
+        else
+            warn "${pattern}.mdc not found in .cursor/rules/"
+        fi
+    done
+fi
+
+# --- 7. .vscode/settings.json validity ---
+
+echo ""
+echo "[7/7] .vscode/settings.json validation"
+
+VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
+if [ -f "$VSCODE_SETTINGS" ]; then
+    if command -v python3 &>/dev/null; then
+        if python3 -c "import json; json.load(open('$VSCODE_SETTINGS'))" 2>/dev/null; then
+            pass "$VSCODE_SETTINGS is valid JSON"
+        else
+            fail "$VSCODE_SETTINGS is NOT valid JSON — VS Code/Cursor may fail to load settings"
+        fi
+    elif command -v node &>/dev/null; then
+        if node -e "JSON.parse(require('fs').readFileSync('$VSCODE_SETTINGS','utf8'))" 2>/dev/null; then
+            pass "$VSCODE_SETTINGS is valid JSON (validated via node)"
+        else
+            fail "$VSCODE_SETTINGS is NOT valid JSON — VS Code/Cursor may fail to load settings"
+        fi
+    else
+        warn "Cannot validate $VSCODE_SETTINGS (neither python3 nor node available)"
+    fi
+else
+    pass ".vscode/settings.json not present (no validation needed)"
 fi
 
 # --- Summary ---

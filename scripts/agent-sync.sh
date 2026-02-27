@@ -32,8 +32,10 @@ CURRENT_HASH=""
 if [ -d "$RULES_HOME/.git" ]; then
     CURRENT_HASH="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "no-git")"
 else
-    CURRENT_HASH="$(find "$RULES_HOME" -name '*.md' -newer "$HASH_FILE" 2>/dev/null | head -1 || echo "")"
-    [ -n "$CURRENT_HASH" ] && CURRENT_HASH="files-changed" || CURRENT_HASH="no-changes"
+    HASH_CMD="shasum"
+    command -v shasum &>/dev/null || HASH_CMD="sha1sum"
+    command -v $HASH_CMD &>/dev/null || HASH_CMD="md5sum"
+    CURRENT_HASH="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.css' -o -name '*.sh' \) -type f -exec $HASH_CMD {} + 2>/dev/null | $HASH_CMD | awk '{print $1}')"
 fi
 
 STORED_HASH=""
@@ -141,18 +143,30 @@ MD_CSS_SOURCE="$RULES_HOME/templates/github-markdown-preview.css"
 if [ -f "$MD_CSS_SOURCE" ]; then
     cp "$MD_CSS_SOURCE" "$PROJECT_DIR/.github-markdown-preview.css"
     mkdir -p "$PROJECT_DIR/.vscode"
-    # Merge into .vscode/settings.json without overwriting existing settings
     VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
     if [ -f "$VSCODE_SETTINGS" ]; then
-        if ! grep -q 'markdown.styles' "$VSCODE_SETTINGS"; then
-            # Insert markdown.styles before the closing }
-            sed -i.bak 's/}$/,\n    "markdown.styles": [".github-markdown-preview.css"]\n}/' "$VSCODE_SETTINGS" 2>/dev/null || true
-            rm -f "$VSCODE_SETTINGS.bak"
+        if grep -q 'markdown.styles' "$VSCODE_SETTINGS"; then
+            echo "  Markdown Preview: markdown.styles already present in settings.json (skipped)"
+        else
+            python3 -c "
+import json, sys
+path = sys.argv[1]
+with open(path) as f:
+    data = json.load(f)
+data['markdown.styles'] = ['.github-markdown-preview.css']
+with open(path, 'w') as f:
+    json.dump(data, f, indent=4)
+    f.write('\n')
+" "$VSCODE_SETTINGS" 2>/dev/null && {
+                echo "  Markdown Preview: markdown.styles added to existing settings.json"
+            } || {
+                echo "  WARNING: Could not merge markdown.styles into settings.json (python3 unavailable or JSON invalid)"
+            }
         fi
     else
-        echo '{"markdown.styles":[".github-markdown-preview.css"]}' > "$VSCODE_SETTINGS"
+        printf '{\n    "markdown.styles": [".github-markdown-preview.css"]\n}\n' > "$VSCODE_SETTINGS"
+        echo "  Markdown Preview: created .vscode/settings.json with markdown.styles"
     fi
-    echo "  Markdown Preview: GitHub-style CSS synced"
 fi
 
 # --- Store sync hash ---
