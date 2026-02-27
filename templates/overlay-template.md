@@ -35,6 +35,10 @@
     如果没有特别的优先级取舍，保持默认 "General-purpose" 即可
   - Tech Stack / Build System / Target Platform: 列出主要技术栈
     这帮助 AI 判断应该使用哪些语言特性和工具
+  - Packs: 声明本项目需要哪些语言包（会被拼接到 CLAUDE.md / AGENTS.md 中）
+    可用的包名对应 packs/ 目录下的文件名（不含 .md 后缀）
+    Cursor 的 .mdc 不受此设置影响（Cursor 通过 globs 自动按需加载）
+    默认值：cpp, cuda, python, markdown, shell, git
 -->
 **Project**: [TODO: project name] — [TODO: one-line description]
 **Boundary**: General-purpose (no special priority trade-offs)
@@ -42,6 +46,7 @@
 **Tech Stack**: Python 3.10+
 **Build System**: pip / setuptools
 **Target Platform**: Linux
+**Packs**: cpp, cuda, python, markdown, shell, git
 
 ## Project Structure
 

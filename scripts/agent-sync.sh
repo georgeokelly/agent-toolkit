@@ -107,6 +107,28 @@ fi
 
 echo "Syncing rules from $RULES_HOME → $PROJECT_DIR"
 
+# --- Resolve active packs (for CLAUDE.md / AGENTS.md) ---
+
+DEFAULT_PACKS="cpp cuda python markdown shell git"
+ACTIVE_PACKS="$DEFAULT_PACKS"
+
+if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+    OVERLAY_PACKS="$(sed -n 's/^\*\*Packs\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1)"
+    if [ -n "$OVERLAY_PACKS" ]; then
+        ACTIVE_PACKS="$(echo "$OVERLAY_PACKS" | tr ',' ' ' | xargs)"
+    fi
+fi
+
+pack_is_active() {
+    local pack_name="$1"
+    for p in $ACTIVE_PACKS; do
+        [ "$p" = "$pack_name" ] && return 0
+    done
+    return 1
+}
+
+echo "  Active packs: $ACTIVE_PACKS"
+
 # --- Generate Cursor .mdc files ---
 
 mkdir -p "$PROJECT_DIR/.cursor/rules"
@@ -163,6 +185,8 @@ done
 
 for rule_file in "$RULES_HOME"/packs/*.md; do
     [ -f "$rule_file" ] || continue
+    pack_name="$(basename "$rule_file" .md)"
+    pack_is_active "$pack_name" || continue
     cat "$rule_file" >> "$CLAUDE_FILE"
     echo "" >> "$CLAUDE_FILE"
     echo "---" >> "$CLAUDE_FILE"
