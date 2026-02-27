@@ -7,6 +7,41 @@ set -euo pipefail
 # Environment:
 #   AGENT_RULES_HOME  — path to central rules repo (default: ~/.config/agent-rules)
 
+show_help() {
+    cat <<'EOF'
+agent-sync — Sync rules from central repo to project directory
+
+USAGE
+    agent-sync [options] [project-dir]
+
+ARGUMENTS
+    project-dir    Target project directory (default: current directory)
+
+OPTIONS
+    -h, --help     Show this help message and exit
+
+ENVIRONMENT
+    AGENT_RULES_HOME   Path to central rules repo (default: ~/.config/agent-rules)
+
+WHAT IT DOES
+    1. Generates Cursor .mdc files in .cursor/rules/ (with frontmatter)
+    2. Generates CLAUDE.md for Claude Code
+    3. Generates AGENTS.md for Codex
+    4. Applies project-specific overlays from .agent-local.md
+    5. Syncs Markdown preview CSS for GitHub-style rendering
+    6. Handles nested sub-repo overlays
+
+EXAMPLES
+    agent-sync                  # Sync rules to current directory
+    agent-sync ~/my-project     # Sync rules to a specific project
+EOF
+    exit 0
+}
+
+case "${1:-}" in
+    -h|--help) show_help ;;
+esac
+
 RULES_HOME="${AGENT_RULES_HOME:-$HOME/.config/agent-rules}"
 
 strip_html_comments() {

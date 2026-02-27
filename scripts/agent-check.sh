@@ -13,6 +13,46 @@ set -euo pipefail
 #   6. Core .mdc semantic validation (alwaysApply must be true)
 #   7. .vscode/settings.json validity (if exists)
 
+show_help() {
+    cat <<'EOF'
+agent-check — Validate generated rule files in a project directory
+
+USAGE
+    agent-check [options] [project-dir]
+
+ARGUMENTS
+    project-dir    Target project directory (default: current directory)
+
+OPTIONS
+    -h, --help     Show this help message and exit
+
+ENVIRONMENT
+    AGENT_RULES_HOME   Path to central rules repo (default: ~/.config/agent-rules)
+
+CHECKS PERFORMED
+    1. Codex AGENTS.md size (must be < 32KiB)
+    2. Cursor .mdc frontmatter lint (must have closing ---)
+    3. No .cursorrules + .mdc dual-write conflict
+    4. Staleness detection (rules repo newer than generated files)
+    5. Generated file existence (CLAUDE.md, AGENTS.md, .mdc files)
+    6. Core .mdc alwaysApply validation (core rules must be always-on)
+    7. .vscode/settings.json validity
+
+EXAMPLES
+    agent-check                  # Check rules in current directory
+    agent-check ~/my-project     # Check rules in a specific project
+
+EXIT CODES
+    0   All checks passed
+    1   One or more checks failed
+EOF
+    exit 0
+}
+
+case "${1:-}" in
+    -h|--help) show_help ;;
+esac
+
 RULES_HOME="${AGENT_RULES_HOME:-$HOME/.config/agent-rules}"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
