@@ -121,7 +121,7 @@ agent-check .
 
 # 5. Add generated files to .gitignore
 #    将生成文件加入 .gitignore
-echo -e '\n# AI agent rules (generated)\nCLAUDE.md\nAGENTS.md\n.cursor/rules/\n.agent-sync-hash\n.agent-sync-manifest\n.github-markdown-preview.css\n.vscode/settings.json' >> .gitignore
+echo -e '\n# AI agent rules (generated)\nCLAUDE.md\nAGENTS.md\n.cursor/rules/\n.agent-sync-hash\n.agent-sync-manifest' >> .gitignore
 
 # 6. Commit .agent-local.md (project-specific rules belong in git)
 #    提交 .agent-local.md（项目特定规则应进入 git）

@@ -28,8 +28,7 @@ WHAT IT DOES
     2. Generates CLAUDE.md for Claude Code
     3. Generates AGENTS.md for Codex
     4. Applies project-specific overlays from .agent-local.md
-    5. Syncs Markdown preview CSS for GitHub-style rendering
-    6. Handles nested sub-repo overlays
+    5. Handles nested sub-repo overlays
 
 EXAMPLES
     agent-sync                  # Sync rules to current directory
@@ -188,38 +187,6 @@ echo "  Codex: AGENTS.md ($AGENTS_SIZE bytes)"
 
 if [ "$AGENTS_SIZE" -gt 32768 ]; then
     echo "  WARNING: AGENTS.md exceeds 32KiB ($AGENTS_SIZE bytes). Codex may silently truncate!"
-fi
-
-# --- Sync Markdown Preview CSS (GitHub-style white background) ---
-
-MD_CSS_SOURCE="$RULES_HOME/templates/github-markdown-preview.css"
-if [ -f "$MD_CSS_SOURCE" ]; then
-    cp "$MD_CSS_SOURCE" "$PROJECT_DIR/.github-markdown-preview.css"
-    mkdir -p "$PROJECT_DIR/.vscode"
-    VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
-    if [ -f "$VSCODE_SETTINGS" ]; then
-        if grep -q 'markdown.styles' "$VSCODE_SETTINGS"; then
-            echo "  Markdown Preview: markdown.styles already present in settings.json (skipped)"
-        else
-            python3 -c "
-import json, sys
-path = sys.argv[1]
-with open(path) as f:
-    data = json.load(f)
-data['markdown.styles'] = ['.github-markdown-preview.css']
-with open(path, 'w') as f:
-    json.dump(data, f, indent=4)
-    f.write('\n')
-" "$VSCODE_SETTINGS" 2>/dev/null && {
-                echo "  Markdown Preview: markdown.styles added to existing settings.json"
-            } || {
-                echo "  WARNING: Could not merge markdown.styles into settings.json (python3 unavailable or JSON invalid)"
-            }
-        fi
-    else
-        printf '{\n    "markdown.styles": [".github-markdown-preview.css"]\n}\n' > "$VSCODE_SETTINGS"
-        echo "  Markdown Preview: created .vscode/settings.json with markdown.styles"
-    fi
 fi
 
 # --- Recursive: generate sub-repo CLAUDE.md/AGENTS.md for nested .agent-local.md ---
