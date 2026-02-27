@@ -1,0 +1,2 @@
+description: Shell scripting standards — error handling, quoting, portability, ShellCheck
+globs: "**/*.{sh,bash,zsh}"

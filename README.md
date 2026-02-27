@@ -15,7 +15,7 @@ This rule system replaces a single monolithic AGENTS file with a **3-layer archi
 | Layer / 层级 | Content / 内容 | Loading / 加载方式 | Budget / 规模 |
 |---|---|---|---|
 | **Core** (core/) | Workflow, communication, quality gates / 工作流、沟通规范、质量门槛 | Always loaded / 始终加载 | ~250 lines |
-| **Language Packs** (packs/) | Python, C++, CUDA, PyBind11, Markdown | By file type / 按文件类型 | ~150 lines each |
+| **Language Packs** (packs/) | Python, C++, CUDA, PyBind11, Shell, Swift, Markdown, Git | By file type / 按文件类型 | ~150 lines each |
 | **Project Overlay** (.agent-local.md) | Project structure, build cmds, boundaries / 项目结构、构建命令、边界 | Per project / 按项目 | ~100-200 lines |
 
 **Why this structure? / 为什么这样设计？**
@@ -41,6 +41,8 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │   ├── cpp.md                   # C++17 rules / C++ 规范
 │   ├── cuda.md                  # CUDA kernel rules / CUDA 规范
 │   ├── pybind11.md              # PyBind11 bindings / PyBind11 绑定规范
+│   ├── shell.md                 # Bash/Zsh scripting / Shell 脚本规范
+│   ├── swift.md                 # Swift 5.9+ rules / Swift 规范
 │   ├── markdown.md              # Markdown writing / Markdown 写作规范
 │   └── git.md                   # Git commit messages / Git 提交信息规范
 │
@@ -54,6 +56,8 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │       ├── cpp.yaml             # globs: "**/*.{cpp,h,hpp,cc}"
 │       ├── cuda.yaml            # globs: "**/*.{cu,cuh,h,hpp}"
 │       ├── pybind11.yaml        # description-based (AI decides relevance)
+│       ├── shell.yaml           # globs: "**/*.{sh,bash,zsh}"
+│       ├── swift.yaml           # globs: "**/*.swift"
 │       ├── markdown.yaml        # globs: "**/*.md"
 │       └── git.yaml             # description-based (commit message context)
 │
@@ -238,10 +242,12 @@ After modifying rules, test with these fixed tasks across all 3 tools:
 2. **C++**: "Add a new `Reshape` method to `ComputeEngine` with Google Test" / 为类添加新方法和 Google Test
 3. **CUDA**: "Add a new elementwise kernel with CUDA_CHECK and stream support" / 添加一个带错误检查和 stream 的新 kernel
 4. **PyBind11**: "Expose the new Reshape method to Python" / 将新方法暴露给 Python
-5. **Bug fix**: "The batch processing crashes on empty input — find and fix" / 修复一个空输入的崩溃
-6. **Refactor**: "Extract the memory management code into a separate utility class" / 将内存管理代码提取为独立工具类
-7. **Ask mode**: "How does the MatMul kernel handle non-square matrices?" (expect citations) / 问答模式：解释 kernel 如何处理非方阵（期望有引用）
-8. **Small fix**: "Fix the typo in the docstring of train_model" (expect Fast Track) / 修复一个 typo（期望使用快速通道）
+5. **Shell**: "Write a deployment script with argument parsing, error handling, and cleanup trap" / 编写一个带参数解析、错误处理和 cleanup 的部署脚本
+6. **Swift**: "Add a `NetworkClient` struct with async/await fetch, error handling, and a Swift Testing test" / 添加一个带 async/await、错误处理和 Swift Testing 测试的网络客户端
+7. **Bug fix**: "The batch processing crashes on empty input — find and fix" / 修复一个空输入的崩溃
+8. **Refactor**: "Extract the memory management code into a separate utility class" / 将内存管理代码提取为独立工具类
+9. **Ask mode**: "How does the MatMul kernel handle non-square matrices?" (expect citations) / 问答模式：解释 kernel 如何处理非方阵（期望有引用）
+10. **Small fix**: "Fix the typo in the docstring of train_model" (expect Fast Track) / 修复一个 typo（期望使用快速通道）
 
 **Pass criteria / 通过标准**: All 3 tools produce structurally similar output, follow the correct workflow stage, and respect MUST-level rules.
 

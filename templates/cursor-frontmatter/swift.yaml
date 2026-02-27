@@ -1,0 +1,2 @@
+description: Swift coding standards — naming, value semantics, error handling, concurrency, protocol-oriented design
+globs: "**/*.swift"
