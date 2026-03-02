@@ -28,6 +28,8 @@ Code comments:
 - **MUST NOT** state the obvious (`int count = 0; // Initialize counter`)
 - **SHOULD** explain *why*, not *what* (`// Start from 0 to match 0-indexed CUDA thread IDs`)
 - **SHOULD** explain complex logic or non-obvious trade-offs
+- **MUST** add or update comments when fixing bugs, optimizing, or changing non-trivial logic — explain the reasoning, not the diff (e.g., `// Use xargs to normalize whitespace; tr alone leaves leading spaces`)
+- **SHOULD** add step-level comments for procedural/sequential code — each major phase gets a one-line summary of *what* and *why*, forming a readable outline of the procedure
 
 ## Quick Reference Commands
 

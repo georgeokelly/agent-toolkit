@@ -20,6 +20,7 @@ Throughout this rule system, constraints are labeled per RFC 2119:
 
 ## Output Format
 
+- **MUST** start each reply with a model identifier tag (e.g., `[Claude 4 Sonnet]`, `[GPT-4o]`, `[Gemini 2.5 Pro]`) to provide semantic context isolation when multiple models share the same conversation
 - **MUST** use fenced code blocks with language tags for all code snippets
 - **SHOULD** provide a concise change summary when modifying multiple files (list files + one-line description each)
 - **SHOULD** keep responses proportional to the question — do not over-explain simple tasks
