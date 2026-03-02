@@ -62,6 +62,8 @@ HASH_FILE="$PROJECT_DIR/.agent-sync-hash"
 
 # --- Validation ---
 
+echo "Checking rules repo at $RULES_HOME ..."
+
 if [ ! -d "$RULES_HOME" ]; then
     echo "ERROR: Rules repo not found at $RULES_HOME"
     echo "  Set AGENT_RULES_HOME or create the directory."
@@ -74,6 +76,8 @@ if [ ! -d "$RULES_HOME/core" ] || [ ! -d "$RULES_HOME/packs" ]; then
 fi
 
 # --- Check if sync is needed ---
+
+echo "Computing staleness hash ..."
 
 HASH_CMD="shasum"
 command -v shasum &>/dev/null || HASH_CMD="sha1sum"
