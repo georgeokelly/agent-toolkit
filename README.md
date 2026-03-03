@@ -149,6 +149,15 @@ codex-run       # Codex via wrapper (see below) / 通过 wrapper 启动 Codex（
 claude-run      # Claude Code via wrapper (see below) / 通过 wrapper 启动 Claude Code（见下文）
 ```
 
+`agent-sync` supports subcommands for fine-grained control / `agent-sync` 支持子命令进行精细控制：
+
+```bash
+agent-sync .              # Full sync (default): Cursor + Claude + Codex / 全量同步（默认）
+agent-sync codex .        # Only regenerate AGENTS.md / 仅重新生成 AGENTS.md
+agent-sync claude .       # Only regenerate CLAUDE.md / 仅重新生成 CLAUDE.md
+agent-sync clean .        # Remove all generated files / 清理所有生成文件
+```
+
 Or combine into one command / 或合并为一条命令:
 
 ```bash
@@ -332,6 +341,8 @@ After modifying rules, test with these fixed tasks across all 3 tools:
 | First time setting up a project / 首次设置项目 | `agent-sync .` |
 | Deleted a sub-repo `.agent-local.md` / 删除了子目录 overlay | `agent-sync .` (auto-cleans ghost rules / 自动清理残留规则) |
 | Generated files accidentally deleted / 生成文件被意外删除 | `agent-sync .` |
+| Need to regenerate only one tool / 只需重新生成某个工具的文件 | `agent-sync codex .` or `agent-sync claude .` |
+| Want to remove all generated files / 需要清除所有生成文件 | `agent-sync clean .` |
 | Nothing changed / 没有变化 | Script auto-detects and skips / 脚本自动检测并跳过 |
 
 ### How to update rules / 如何更新规则

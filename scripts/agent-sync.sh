@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # agent-sync.sh — Sync rules from central repo to project directory
-# Usage: agent-sync.sh [project-dir]
+# Usage: agent-sync.sh [subcommand] [project-dir]
 #
 # Environment:
 #   AGENT_RULES_HOME  — path to central rules repo (default: ~/.config/agent-rules)
@@ -12,41 +12,57 @@ show_help() {
 agent-sync — Sync rules from central repo to project directory
 
 USAGE
-    agent-sync [options] [project-dir]
+    agent-sync [project-dir]              Full sync (default)
+    agent-sync codex [project-dir]        Only generate AGENTS.md
+    agent-sync claude [project-dir]       Only generate CLAUDE.md
+    agent-sync clean [project-dir]        Remove all generated files
+    agent-sync -h | --help                Show this help message
 
 ARGUMENTS
     project-dir    Target project directory (default: current directory)
 
-OPTIONS
-    -h, --help     Show this help message and exit
-
 ENVIRONMENT
     AGENT_RULES_HOME   Path to central rules repo (default: ~/.config/agent-rules)
 
-WHAT IT DOES
-    1. Generates Cursor .mdc files in .cursor/rules/ (with frontmatter)
-    2. Generates .agent-rules/CLAUDE.md for Claude Code
-    3. Generates .agent-rules/AGENTS.md for Codex
-    4. Applies project-specific overlays from .agent-local.md
-    5. Handles nested sub-repo overlays
-    6. Cleans up root-level CLAUDE.md/AGENTS.md remnants
+SUBCOMMANDS
+    (default)   Full sync: generates Cursor .mdc files, CLAUDE.md, AGENTS.md,
+                applies project overlays, handles sub-repo overlays, and
+                cleans up root-level remnants. Skips if already up to date.
+
+    codex       Only generate .agent-rules/AGENTS.md for Codex.
+                Always regenerates (skips staleness check).
+
+    claude      Only generate .agent-rules/CLAUDE.md for Claude Code.
+                Always regenerates (skips staleness check).
+
+    clean       Remove all generated files:
+                .cursor/rules/*.mdc, .agent-rules/, .agent-sync-hash,
+                .agent-sync-manifest, and sub-repo CLAUDE.md/AGENTS.md.
 
 EXAMPLES
-    agent-sync                  # Sync rules to current directory
-    agent-sync ~/my-project     # Sync rules to a specific project
+    agent-sync                  # Full sync to current directory
+    agent-sync ~/my-project     # Full sync to a specific project
+    agent-sync codex .          # Regenerate only AGENTS.md
+    agent-sync claude .         # Regenerate only CLAUDE.md
+    agent-sync clean            # Remove all generated files
 EOF
     exit 0
 }
 
+# --- Parse arguments: detect subcommand, then project-dir ---
+
+SUBCOMMAND="sync"
 case "${1:-}" in
     -h|--help) show_help ;;
+    codex|claude|clean)
+        SUBCOMMAND="$1"
+        shift
+        ;;
 esac
 
 RULES_HOME="${AGENT_RULES_HOME:-$HOME/.config/agent-rules}"
 
 strip_html_comments() {
-    # Remove HTML comments (<!-- ... -->) including multi-line ones
-    # Keeps all other content intact
     perl -0777 -pe 's/<!--.*?-->\n?//gs' 2>/dev/null \
         || python3 -c "
 import re, sys
@@ -55,211 +71,306 @@ print(re.sub(r'<!--.*?-->\n?', '', text, flags=re.DOTALL), end='')
 " 2>/dev/null \
         || cat  # fallback: pass through unchanged
 }
+
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
 HASH_FILE="$PROJECT_DIR/.agent-sync-hash"
+MANIFEST="$PROJECT_DIR/.agent-sync-manifest"
 
 # --- Validation ---
 
-echo "Checking rules repo at $RULES_HOME ..."
-
-if [ ! -d "$RULES_HOME" ]; then
-    echo "ERROR: Rules repo not found at $RULES_HOME"
-    echo "  Set AGENT_RULES_HOME or create the directory."
-    exit 1
-fi
-
-if [ ! -d "$RULES_HOME/core" ] || [ ! -d "$RULES_HOME/packs" ]; then
-    echo "ERROR: Rules repo missing core/ or packs/ directory."
-    exit 1
-fi
-
-# --- Check if sync is needed ---
-
-echo "Computing staleness hash ..."
-
-HASH_CMD="shasum"
-command -v shasum &>/dev/null || HASH_CMD="sha1sum"
-command -v $HASH_CMD &>/dev/null || HASH_CMD="md5sum"
-
-RULES_HASH=""
-if [ -d "$RULES_HOME/.git" ]; then
-    RULES_HASH="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "no-git")"
-else
-    RULES_HASH="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.css' -o -name '*.sh' \) -type f -exec $HASH_CMD {} + 2>/dev/null | $HASH_CMD | awk '{print $1}')"
-fi
-
-OVERLAY_HASH="$(find "$PROJECT_DIR" -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' -type f -exec $HASH_CMD {} + 2>/dev/null | $HASH_CMD | awk '{print $1}')"
-CURRENT_HASH="${RULES_HASH}:${OVERLAY_HASH}"
-
-STORED_HASH=""
-if [ -f "$HASH_FILE" ]; then
-    STORED_HASH="$(cat "$HASH_FILE")"
-fi
-
-CURSOR_EXISTS=false
-CLAUDE_EXISTS=false
-AGENTS_EXISTS=false
-[ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls -A "$PROJECT_DIR/.cursor/rules/" 2>/dev/null)" ] && CURSOR_EXISTS=true
-[ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ] && CLAUDE_EXISTS=true
-[ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ] && AGENTS_EXISTS=true
-
-if [ "$CURRENT_HASH" = "$STORED_HASH" ] && $CURSOR_EXISTS && $CLAUDE_EXISTS && $AGENTS_EXISTS; then
-    echo "Rules up to date. No sync needed."
-    exit 0
-fi
-
-echo "Syncing rules from $RULES_HOME → $PROJECT_DIR"
-
-# --- Resolve active packs (for CLAUDE.md / AGENTS.md) ---
-
-DEFAULT_PACKS="cpp cuda python markdown shell git"
-ACTIVE_PACKS="$DEFAULT_PACKS"
-
-if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
-    OVERLAY_PACKS="$(sed -n 's/^\*\*Packs\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1)"
-    if [ -n "$OVERLAY_PACKS" ]; then
-        ACTIVE_PACKS="$(echo "$OVERLAY_PACKS" | tr ',' ' ' | xargs)"
+validate_rules_repo() {
+    echo "Checking rules repo at $RULES_HOME ..."
+    if [ ! -d "$RULES_HOME" ]; then
+        echo "ERROR: Rules repo not found at $RULES_HOME"
+        echo "  Set AGENT_RULES_HOME or create the directory."
+        exit 1
     fi
-fi
+    if [ ! -d "$RULES_HOME/core" ] || [ ! -d "$RULES_HOME/packs" ]; then
+        echo "ERROR: Rules repo missing core/ or packs/ directory."
+        exit 1
+    fi
+}
+
+# --- Pack resolution ---
+
+ACTIVE_PACKS=""
+
+resolve_packs() {
+    local default_packs="cpp cuda python markdown shell git"
+    ACTIVE_PACKS="$default_packs"
+    if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+        local overlay_packs
+        overlay_packs="$(sed -n 's/^\*\*Packs\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1)"
+        if [ -n "$overlay_packs" ]; then
+            ACTIVE_PACKS="$(echo "$overlay_packs" | tr ',' ' ' | xargs)"
+        fi
+    fi
+    echo "  Active packs: $ACTIVE_PACKS"
+}
 
 pack_is_active() {
     local pack_name="$1"
+    local p
     for p in $ACTIVE_PACKS; do
         [ "$p" = "$pack_name" ] && return 0
     done
     return 1
 }
 
-echo "  Active packs: $ACTIVE_PACKS"
+# --- Staleness check (full sync only) ---
 
-# --- Generate Cursor .mdc files ---
+CURRENT_HASH=""
 
-mkdir -p "$PROJECT_DIR/.cursor/rules"
+check_staleness() {
+    echo "Computing staleness hash ..."
 
-FRONTMATTER_DIR="$RULES_HOME/templates/cursor-frontmatter"
+    local hash_cmd="shasum"
+    command -v shasum &>/dev/null || hash_cmd="sha1sum"
+    command -v $hash_cmd &>/dev/null || hash_cmd="md5sum"
 
-for rule_file in "$RULES_HOME"/core/*.md "$RULES_HOME"/packs/*.md; do
-    [ -f "$rule_file" ] || continue
-    basename_no_ext="$(basename "$rule_file" .md)"
-    # Strip numeric prefix for frontmatter lookup (00-communication → communication)
-    lookup_name="$(echo "$basename_no_ext" | sed 's/^[0-9]*-//')"
-    target="$PROJECT_DIR/.cursor/rules/${basename_no_ext}.mdc"
-
-    echo "---" > "$target"
-    if [ -f "$FRONTMATTER_DIR/${lookup_name}.yaml" ]; then
-        cat "$FRONTMATTER_DIR/${lookup_name}.yaml" >> "$target"
+    local rules_hash=""
+    if [ -d "$RULES_HOME/.git" ]; then
+        rules_hash="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "no-git")"
     else
-        echo "description: ${lookup_name} rules" >> "$target"
-        echo "alwaysApply: false" >> "$target"
+        rules_hash="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.css' -o -name '*.sh' \) -type f -exec $hash_cmd {} + 2>/dev/null | $hash_cmd | awk '{print $1}')"
     fi
-    echo "---" >> "$target"
-    echo "" >> "$target"
-    cat "$rule_file" >> "$target"
-done
 
-# Append project overlay to a separate always-apply .mdc
-if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
-    target="$PROJECT_DIR/.cursor/rules/project-overlay.mdc"
-    echo "---" > "$target"
-    echo "description: Project-specific rules and constraints" >> "$target"
-    echo "alwaysApply: true" >> "$target"
-    echo "---" >> "$target"
-    echo "" >> "$target"
-    strip_html_comments < "$PROJECT_DIR/.agent-local.md" >> "$target"
-else
-    rm -f "$PROJECT_DIR/.cursor/rules/project-overlay.mdc"
-fi
+    # -maxdepth 3: intentional trade-off — .agent-local.md deeper than 3 levels is unsupported
+    # to avoid costly full-tree traversal in large repos (build dirs, .venv, etc.)
+    local overlay_hash
+    overlay_hash="$(find "$PROJECT_DIR" -maxdepth 3 -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' -type f -exec $hash_cmd {} + 2>/dev/null | $hash_cmd | awk '{print $1}')"
+    CURRENT_HASH="${rules_hash}:${overlay_hash}"
 
-echo "  Cursor: $(ls "$PROJECT_DIR/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') .mdc files"
+    local stored_hash=""
+    if [ -f "$HASH_FILE" ]; then
+        stored_hash="$(cat "$HASH_FILE")"
+    fi
 
-# --- Generate CLAUDE.md and AGENTS.md into .agent-rules/ ---
-# Cursor auto-injects root-level AGENTS.md/CLAUDE.md into system prompt,
-# duplicating .cursor/rules/*.mdc. Output to .agent-rules/ to avoid this.
+    local cursor_exists=false claude_exists=false agents_exists=false
+    [ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls -A "$PROJECT_DIR/.cursor/rules/" 2>/dev/null)" ] && cursor_exists=true
+    [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ] && claude_exists=true
+    [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ] && agents_exists=true
 
-mkdir -p "$PROJECT_DIR/.agent-rules"
+    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists; then
+        echo "Rules up to date. No sync needed."
+        exit 0
+    fi
+}
 
-CLAUDE_FILE="$PROJECT_DIR/.agent-rules/CLAUDE.md"
-echo "<!-- Auto-generated by agent-sync. Do not edit manually. -->" > "$CLAUDE_FILE"
-echo "" >> "$CLAUDE_FILE"
+# --- Generation functions ---
 
-for rule_file in "$RULES_HOME"/core/*.md; do
-    [ -f "$rule_file" ] || continue
-    cat "$rule_file" >> "$CLAUDE_FILE"
-    echo "" >> "$CLAUDE_FILE"
-    echo "---" >> "$CLAUDE_FILE"
-    echo "" >> "$CLAUDE_FILE"
-done
+generate_cursor() {
+    mkdir -p "$PROJECT_DIR/.cursor/rules"
+    local frontmatter_dir="$RULES_HOME/templates/cursor-frontmatter"
 
-for rule_file in "$RULES_HOME"/packs/*.md; do
-    [ -f "$rule_file" ] || continue
-    pack_name="$(basename "$rule_file" .md)"
-    pack_is_active "$pack_name" || continue
-    cat "$rule_file" >> "$CLAUDE_FILE"
-    echo "" >> "$CLAUDE_FILE"
-    echo "---" >> "$CLAUDE_FILE"
-    echo "" >> "$CLAUDE_FILE"
-done
+    local rule_file basename_no_ext lookup_name target
+    for rule_file in "$RULES_HOME"/core/*.md "$RULES_HOME"/packs/*.md; do
+        [ -f "$rule_file" ] || continue
+        basename_no_ext="$(basename "$rule_file" .md)"
+        # Strip numeric prefix for frontmatter lookup (00-communication → communication)
+        lookup_name="$(echo "$basename_no_ext" | sed 's/^[0-9]*-//')"
+        target="$PROJECT_DIR/.cursor/rules/${basename_no_ext}.mdc"
 
-if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
-    strip_html_comments < "$PROJECT_DIR/.agent-local.md" >> "$CLAUDE_FILE"
-    echo "" >> "$CLAUDE_FILE"
-fi
-
-echo "  Claude Code: CLAUDE.md ($(wc -c < "$CLAUDE_FILE" | tr -d ' ') bytes)"
-
-# --- Generate AGENTS.md (same content as CLAUDE.md for Codex) ---
-
-cp "$CLAUDE_FILE" "$PROJECT_DIR/.agent-rules/AGENTS.md"
-sed -i.bak '1s/.*<!-- Auto-generated.*/<!-- Auto-generated by agent-sync for Codex. Do not edit manually. -->/' "$PROJECT_DIR/.agent-rules/AGENTS.md" 2>/dev/null || true
-rm -f "$PROJECT_DIR/.agent-rules/AGENTS.md.bak"
-
-AGENTS_SIZE=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
-echo "  Codex: AGENTS.md ($AGENTS_SIZE bytes)"
-
-if [ "$AGENTS_SIZE" -gt 32768 ]; then
-    echo "  WARNING: AGENTS.md exceeds 32KiB ($AGENTS_SIZE bytes). Codex may silently truncate!"
-fi
-
-# --- Clean up root-level remnants from previous agent-sync versions ---
-
-rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/.cursorignore"
-
-# --- Recursive: generate sub-repo CLAUDE.md/AGENTS.md for nested .agent-local.md ---
-
-MANIFEST="$PROJECT_DIR/.agent-sync-manifest"
-MANIFEST_NEW="$MANIFEST.new"
-: > "$MANIFEST_NEW"
-
-find "$PROJECT_DIR" -mindepth 2 -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' | while read -r sub_overlay; do
-    SUB_DIR="$(dirname "$sub_overlay")"
-    SUB_REL="${SUB_DIR#"$PROJECT_DIR"/}"
-
-    SUB_CLAUDE="$SUB_DIR/CLAUDE.md"
-    echo "<!-- Auto-generated by agent-sync (sub-repo overlay only). Do not edit manually. -->" > "$SUB_CLAUDE"
-    echo "" >> "$SUB_CLAUDE"
-    strip_html_comments < "$sub_overlay" >> "$SUB_CLAUDE"
-
-    cp "$SUB_CLAUDE" "$SUB_DIR/AGENTS.md"
-
-    echo "$SUB_REL" >> "$MANIFEST_NEW"
-    echo "  Sub-repo $SUB_REL: CLAUDE.md + AGENTS.md (overlay only, $(wc -c < "$SUB_CLAUDE" | tr -d ' ') bytes)"
-done
-
-# Clean up ghost rule files from deleted sub-repo overlays
-if [ -f "$MANIFEST" ]; then
-    while IFS= read -r old_rel; do
-        if [ ! -f "$PROJECT_DIR/$old_rel/.agent-local.md" ]; then
-            rm -f "$PROJECT_DIR/$old_rel/CLAUDE.md" "$PROJECT_DIR/$old_rel/AGENTS.md"
-            echo "  Cleaned ghost rules: $old_rel/ (overlay removed)"
+        echo "---" > "$target"
+        if [ -f "$frontmatter_dir/${lookup_name}.yaml" ]; then
+            cat "$frontmatter_dir/${lookup_name}.yaml" >> "$target"
+        else
+            echo "description: ${lookup_name} rules" >> "$target"
+            echo "alwaysApply: false" >> "$target"
         fi
-    done < "$MANIFEST"
-fi
-mv "$MANIFEST_NEW" "$MANIFEST"
+        echo "---" >> "$target"
+        echo "" >> "$target"
+        cat "$rule_file" >> "$target"
+    done
 
-# --- Store sync hash ---
+    # Project overlay as a separate always-apply .mdc
+    if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+        target="$PROJECT_DIR/.cursor/rules/project-overlay.mdc"
+        echo "---" > "$target"
+        echo "description: Project-specific rules and constraints" >> "$target"
+        echo "alwaysApply: true" >> "$target"
+        echo "---" >> "$target"
+        echo "" >> "$target"
+        strip_html_comments < "$PROJECT_DIR/.agent-local.md" >> "$target"
+    else
+        rm -f "$PROJECT_DIR/.cursor/rules/project-overlay.mdc"
+    fi
 
-echo "$CURRENT_HASH" > "$HASH_FILE"
+    echo "  Cursor: $(ls "$PROJECT_DIR/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') .mdc files"
+}
 
-echo "Sync complete."
+generate_claude() {
+    mkdir -p "$PROJECT_DIR/.agent-rules"
+    local claude_file="$PROJECT_DIR/.agent-rules/CLAUDE.md"
+    echo "<!-- Auto-generated by agent-sync. Do not edit manually. -->" > "$claude_file"
+    echo "" >> "$claude_file"
+
+    local rule_file pack_name
+    for rule_file in "$RULES_HOME"/core/*.md; do
+        [ -f "$rule_file" ] || continue
+        cat "$rule_file" >> "$claude_file"
+        echo "" >> "$claude_file"
+        echo "---" >> "$claude_file"
+        echo "" >> "$claude_file"
+    done
+
+    for rule_file in "$RULES_HOME"/packs/*.md; do
+        [ -f "$rule_file" ] || continue
+        pack_name="$(basename "$rule_file" .md)"
+        pack_is_active "$pack_name" || continue
+        cat "$rule_file" >> "$claude_file"
+        echo "" >> "$claude_file"
+        echo "---" >> "$claude_file"
+        echo "" >> "$claude_file"
+    done
+
+    if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+        strip_html_comments < "$PROJECT_DIR/.agent-local.md" >> "$claude_file"
+        echo "" >> "$claude_file"
+    fi
+
+    echo "  Claude Code: CLAUDE.md ($(wc -c < "$claude_file" | tr -d ' ') bytes)"
+}
+
+generate_codex() {
+    mkdir -p "$PROJECT_DIR/.agent-rules"
+
+    # AGENTS.md is derived from CLAUDE.md; always regenerate to avoid stale content
+    generate_claude
+
+    cp "$PROJECT_DIR/.agent-rules/CLAUDE.md" "$PROJECT_DIR/.agent-rules/AGENTS.md"
+    sed -i.bak '1s/.*<!-- Auto-generated.*/<!-- Auto-generated by agent-sync for Codex. Do not edit manually. -->/' "$PROJECT_DIR/.agent-rules/AGENTS.md" 2>/dev/null || true
+    rm -f "$PROJECT_DIR/.agent-rules/AGENTS.md.bak"
+
+    local agents_size
+    agents_size=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
+    echo "  Codex: AGENTS.md ($agents_size bytes)"
+    if [ "$agents_size" -gt 32768 ]; then
+        echo "  WARNING: AGENTS.md exceeds 32KiB ($agents_size bytes). Codex may silently truncate!"
+    fi
+}
+
+cleanup_remnants() {
+    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/.cursorignore"
+}
+
+sync_sub_repos() {
+    local manifest_new="$MANIFEST.new"
+    : > "$manifest_new"
+
+    # -maxdepth 3: matches check_staleness depth — overlays deeper than 3 levels are unsupported
+    local sub_overlay sub_dir sub_rel sub_claude
+    find "$PROJECT_DIR" -mindepth 2 -maxdepth 3 -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' | while read -r sub_overlay; do
+        sub_dir="$(dirname "$sub_overlay")"
+        sub_rel="${sub_dir#"$PROJECT_DIR"/}"
+
+        sub_claude="$sub_dir/CLAUDE.md"
+        echo "<!-- Auto-generated by agent-sync (sub-repo overlay only). Do not edit manually. -->" > "$sub_claude"
+        echo "" >> "$sub_claude"
+        strip_html_comments < "$sub_overlay" >> "$sub_claude"
+
+        cp "$sub_claude" "$sub_dir/AGENTS.md"
+
+        echo "$sub_rel" >> "$manifest_new"
+        echo "  Sub-repo $sub_rel: CLAUDE.md + AGENTS.md (overlay only, $(wc -c < "$sub_claude" | tr -d ' ') bytes)"
+    done
+
+    # Clean up ghost rule files from deleted sub-repo overlays
+    if [ -f "$MANIFEST" ]; then
+        local old_rel
+        while IFS= read -r old_rel; do
+            if [ ! -f "$PROJECT_DIR/$old_rel/.agent-local.md" ]; then
+                rm -f "$PROJECT_DIR/$old_rel/CLAUDE.md" "$PROJECT_DIR/$old_rel/AGENTS.md"
+                echo "  Cleaned ghost rules: $old_rel/ (overlay removed)"
+            fi
+        done < "$MANIFEST"
+    fi
+    mv "$manifest_new" "$MANIFEST"
+}
+
+store_hash() {
+    echo "$CURRENT_HASH" > "$HASH_FILE"
+}
+
+# --- Clean subcommand ---
+
+do_clean() {
+    echo "Cleaning generated files in $PROJECT_DIR ..."
+
+    if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
+        rm -f "$PROJECT_DIR/.cursor/rules/"*.mdc
+        rmdir "$PROJECT_DIR/.cursor/rules" 2>/dev/null || true
+        rmdir "$PROJECT_DIR/.cursor" 2>/dev/null || true
+        echo "  Removed .cursor/rules/*.mdc"
+    fi
+
+    if [ -d "$PROJECT_DIR/.agent-rules" ]; then
+        rm -rf "$PROJECT_DIR/.agent-rules"
+        echo "  Removed .agent-rules/"
+    fi
+
+    rm -f "$HASH_FILE"
+    echo "  Removed .agent-sync-hash"
+
+    # Clean sub-repo generated files using manifest
+    if [ -f "$MANIFEST" ]; then
+        local old_rel
+        while IFS= read -r old_rel; do
+            rm -f "$PROJECT_DIR/$old_rel/CLAUDE.md" "$PROJECT_DIR/$old_rel/AGENTS.md"
+            echo "  Removed sub-repo rules: $old_rel/"
+        done < "$MANIFEST"
+    fi
+    rm -f "$MANIFEST"
+    echo "  Removed .agent-sync-manifest"
+
+    # Fallback: scan for auto-generated files missed by manifest (e.g., manifest was deleted)
+    local stale_file
+    find "$PROJECT_DIR" -mindepth 2 -maxdepth 4 \( -name 'CLAUDE.md' -o -name 'AGENTS.md' \) -not -path '*/.git/*' -not -path '*/.agent-rules/*' -not -path '*/node_modules/*' -type f | while read -r stale_file; do
+        if head -1 "$stale_file" 2>/dev/null | grep -q '<!-- Auto-generated by agent-sync'; then
+            rm -f "$stale_file"
+            echo "  Removed orphan: ${stale_file#"$PROJECT_DIR"/}"
+        fi
+    done
+
+    # Root-level remnants
+    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/.cursorignore"
+
+    echo "Clean complete."
+}
+
+# --- Main dispatch ---
+
+case "$SUBCOMMAND" in
+    clean)
+        do_clean
+        ;;
+    codex)
+        validate_rules_repo
+        resolve_packs
+        echo "Generating AGENTS.md for Codex in $PROJECT_DIR ..."
+        generate_codex
+        echo "Done."
+        ;;
+    claude)
+        validate_rules_repo
+        resolve_packs
+        echo "Generating CLAUDE.md for Claude Code in $PROJECT_DIR ..."
+        generate_claude
+        echo "Done."
+        ;;
+    sync)
+        validate_rules_repo
+        check_staleness
+        echo "Syncing rules from $RULES_HOME → $PROJECT_DIR"
+        resolve_packs
+        generate_cursor
+        # generate_codex internally calls generate_claude first
+        generate_codex
+        cleanup_remnants
+        sync_sub_repos
+        store_hash
+        echo "Sync complete."
+        ;;
+esac

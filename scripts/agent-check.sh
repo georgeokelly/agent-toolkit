@@ -72,18 +72,19 @@ echo "================================"
 # --- 1. Codex AGENTS.md size ---
 
 echo ""
-echo "[1/7] Codex AGENTS.md size limit"
+# Codex size check is advisory — Codex is not the primary tool in this workflow
+echo "[1/7] Codex AGENTS.md size limit (advisory)"
 
 if [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ]; then
     SIZE=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
     if [ "$SIZE" -gt 32768 ]; then
-        fail ".agent-rules/AGENTS.md is $SIZE bytes (> 32KiB). Codex will silently truncate!"
+        warn ".agent-rules/AGENTS.md is $SIZE bytes (> 32KiB). Codex may silently truncate."
     else
         PERCENT=$((SIZE * 100 / 32768))
         pass ".agent-rules/AGENTS.md is $SIZE bytes (${PERCENT}% of 32KiB limit)"
     fi
 else
-    fail ".agent-rules/AGENTS.md not found"
+    warn ".agent-rules/AGENTS.md not found (Codex not in use)"
 fi
 
 # --- 2. Cursor frontmatter lint ---
@@ -166,14 +167,17 @@ fi
 echo ""
 echo "[5/7] Generated file existence"
 
-EXPECTED_FILES=("CLAUDE.md" "AGENTS.md")
-for f in "${EXPECTED_FILES[@]}"; do
-    if [ -f "$PROJECT_DIR/.agent-rules/$f" ]; then
-        pass ".agent-rules/$f exists"
-    else
-        fail ".agent-rules/$f not found"
-    fi
-done
+# CLAUDE.md is required; AGENTS.md is advisory (Codex is not the primary tool)
+if [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ]; then
+    pass ".agent-rules/CLAUDE.md exists"
+else
+    fail ".agent-rules/CLAUDE.md not found"
+fi
+if [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ]; then
+    pass ".agent-rules/AGENTS.md exists"
+else
+    warn ".agent-rules/AGENTS.md not found (Codex not in use)"
+fi
 
 # Warn if root-level remnants exist (Cursor would auto-inject these)
 for f in CLAUDE.md AGENTS.md; do
