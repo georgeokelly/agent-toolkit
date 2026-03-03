@@ -72,3 +72,47 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
 - **MUST NOT** include secrets, API keys, or tokens in commit messages
 - **MUST NOT** write vague titles like "fix stuff", "update code", "WIP"
 - **MUST NOT** use file-centric descriptions as primary structure
+
+## README Sync Check (MUST)
+
+When the user requests a git commit **or** asks to generate a commit command, **MUST** run a README sync check with a blocking confirmation flow.
+
+### Procedure
+
+1. Determine commit scope from staged files only (e.g., `git diff --cached --name-only`), and **MUST NOT** use unstaged/untracked workspace changes
+2. For each staged file, determine its directory ancestry (leaf → root)
+3. Collect candidate READMEs: the root `README.md` plus any `README.md` in directories on the ancestry paths of staged files
+4. For each candidate README, check whether it references content affected by the staged changes (e.g., API descriptions, file/module lists, usage examples, architecture diagrams)
+5. If any README needs updating, **MUST** list affected READMEs and suggested edits, then pause and ask the user how to proceed:
+   - (a) Update and stage READMEs now
+   - (b) Skip README updates for this commit
+6. **MUST NOT** generate commit commands or execute `git commit` until the user explicitly:
+   - Confirms skipping the README updates, **OR**
+   - Updates the affected READMEs and stages those changes
+7. If the user chooses to skip README updates, **MUST** record an explicit skip confirmation in the chat (e.g., "Confirmed: skip README updates for this commit")
+8. If no README needs updating initially, proceed normally
+
+### Scope Rules
+
+- **MUST** check the root `README.md` if it mentions content related to the staged code changes
+- **MUST** check `README.md` files in directories where staged files reside (and their parent directories up to root)
+- **MUST NOT** check `README.md` files in unrelated sibling directories — staged changes in `src/moduleA/` do not require checking `src/moduleB/README.md`
+- A README "needs updating" means it describes functionality, APIs, file structures, or behaviors that the staged code changes have altered
+
+### Example
+
+```
+Staged files:
+  src/auth/login.py
+  src/auth/token.py
+
+Ignored for README check (not staged):
+  tmp/debug.log
+  .cache/index.json
+
+Check these READMEs:
+  ✅ README.md          (root — may describe auth module)
+  ✅ src/auth/README.md  (direct parent of staged files)
+  ❌ src/api/README.md   (unrelated sibling directory)
+  ❌ docs/README.md      (no staged files under docs/)
+```

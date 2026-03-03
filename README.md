@@ -44,7 +44,7 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │   ├── shell.md                 # Bash/Zsh scripting / Shell 脚本规范
 │   ├── swift.md                 # Swift 5.9+ rules / Swift 规范
 │   ├── markdown.md              # Markdown writing / Markdown 写作规范
-│   └── git.md                   # Git commit messages / Git 提交信息规范
+│   └── git.md                   # Git commit conventions + README sync / Git 提交规范 + README 同步检查
 │
 ├── templates/
 │   ├── overlay-template.md      # Template for .agent-local.md / 项目特定规则模板（含中文引导注释）
@@ -59,12 +59,19 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │       ├── shell.yaml           # globs: "**/*.{sh,bash,zsh}"
 │       ├── swift.yaml           # globs: "**/*.swift"
 │       ├── markdown.yaml        # globs: "**/*.md"
-│       └── git.yaml             # description-based (commit message context)
+│       └── git.yaml             # description-based (commit + README sync context)
+│
+├── temp/                        ← Ephemeral verification artifacts / 临时验证产物
+│   └── README.md
+│
+├── todo_list/                   ← Planned changes tracker / 待办变更跟踪
+│   └── README.md
 │
 ├── scripts/
 │   ├── agent-sync.sh            # Sync rules to project / 同步规则到项目
 │   └── agent-check.sh           # Validate generated files / 验证生成文件
 │
+├── LICENSE
 └── README.md                    # This file / 本文件
 ```
 
