@@ -1,2 +1,7 @@
 todo_list/
 temp/
+
+# Ignore workspace and agent sync metadata files
+.cursor
+*/AGENTS.md
+*/CLAUDE.md
