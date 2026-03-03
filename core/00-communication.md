@@ -20,7 +20,19 @@ Throughout this rule system, constraints are labeled per RFC 2119:
 
 ## Output Format
 
-- **MUST** start each reply with a short model identifier tag for semantic context isolation when multiple models share the same conversation. Use the public product name, not the internal model ID. Format: `[Family-Version-Tier]`; for all model families, numeric versions **MUST** include a minor version (e.g., `5.3`, `4.6`, `2.5`; not `5`, `4`, `2`). Examples: `[Claude-4.6-Opus]`, `[GPT-5.3]`, `[Gemini-2.5-Pro]`. MUST NOT include raw API model strings like `claude-4.6-opus-max-thinking`.
+### Model Identifier Tag
+
+- **MUST** start the first visible reply text for each user query with a model identifier tag. If a single user query produces multiple assistant messages (initial reply, progress updates, follow-ups) without a new user query in between, only the first message requires the tag.
+- **MUST** place the tag in the user-visible output text, **NOT** only in internal reasoning/thinking traces. If the platform separates "thought" and "reply", the tag **MUST** appear in the reply portion.
+- **MUST** reflect the actual physical model processing the request, derived from system instructions or runtime environment. **MUST NOT** roleplay, mirror conversation examples, or infer identity from prior messages.
+- **MUST** use the public product name, not the internal model ID.
+- Format: `[Family-Version-Tier]`; numeric versions **MUST** include a minor version (e.g., `5.3`, `4.6`, `3.1`; not `5`, `4`, `3`).
+- If exact version or tier cannot be determined with high confidence, **MUST** fallback to `[Family-Unknown]`. **MUST NOT** guess.
+- **MUST NOT** include raw API model strings like `claude-4.6-opus-max-thinking`.
+- Examples: `[Claude-4.6-Opus]`, `[GPT-5.3]`, `[Gemini-3.1-Pro]`, `[Gemini-Unknown]`.
+
+### General
+
 - **MUST** use fenced code blocks with language tags for all code snippets
 - **SHOULD** provide a concise change summary when modifying multiple files (list files + one-line description each)
 - **SHOULD** keep responses proportional to the question — do not over-explain simple tasks

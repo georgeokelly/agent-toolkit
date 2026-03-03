@@ -56,9 +56,12 @@ Migration:
 | Improve | Performance, UX, or readability improvement |
 | Support | Adding compatibility for new platform/format |
 
-## Co-authorship (SHOULD when applicable)
+## Co-authorship (MUST evaluate correctly)
 
-When AI tools contributed significantly:
+- **MUST** add `Co-authored-by: Cursor <cursoragent@cursor.com>` if the AI agent wrote, modified, or refactored any programming code being committed in the current session — even if the commit also contains non-code files.
+- **MUST NOT** add the trailer when AI contributions are limited to commit-message drafting, review comments, planning, or Q&A.
+- **MUST NOT** add the trailer when a commit contains only non-programming content (e.g., Markdown, HTML, plain text docs, config files) even if the AI edited them.
+- "Programming code" means source code in languages such as Python, TypeScript, C/C++, Rust, CUDA, shell scripts, etc. It excludes markup (Markdown, HTML), data formats (JSON, YAML, TOML), and plain text.
 
 ```
 Co-authored-by: Cursor <cursoragent@cursor.com>
