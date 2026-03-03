@@ -20,7 +20,7 @@ Throughout this rule system, constraints are labeled per RFC 2119:
 
 ## Output Format
 
-- **MUST** start each reply with a short model identifier tag for semantic context isolation when multiple models share the same conversation. Use the public product name, not the internal model ID. Format: `[Family-Version-Tier]`. Examples: `[Claude-4.6-Opus]`, `[GPT-4o]`, `[Gemini-2.5-Pro]`. MUST NOT include raw API model strings like `claude-4.6-opus-max-thinking`.
+- **MUST** start each reply with a short model identifier tag for semantic context isolation when multiple models share the same conversation. Use the public product name, not the internal model ID. Format: `[Family-Version-Tier]`; for all model families, numeric versions **MUST** include a minor version (e.g., `5.3`, `4.6`, `2.5`; not `5`, `4`, `2`). Examples: `[Claude-4.6-Opus]`, `[GPT-5.3]`, `[Gemini-2.5-Pro]`. MUST NOT include raw API model strings like `claude-4.6-opus-max-thinking`.
 - **MUST** use fenced code blocks with language tags for all code snippets
 - **SHOULD** provide a concise change summary when modifying multiple files (list files + one-line description each)
 - **SHOULD** keep responses proportional to the question — do not over-explain simple tasks
