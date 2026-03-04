@@ -70,7 +70,8 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │
 ├── scripts/
 │   ├── agent-sync.sh            # Sync rules to project / 同步规则到项目
-│   └── agent-check.sh           # Validate generated files / 验证生成文件
+│   ├── agent-check.sh           # Validate generated files / 验证生成文件
+│   └── async-agent-rules.sh     # Pull latest rules with unlock/relock flow / 拉取最新规则（解锁-重锁流程）
 │
 ├── LICENSE
 └── README.md                    # This file / 本文件
