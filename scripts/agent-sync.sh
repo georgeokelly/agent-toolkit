@@ -139,7 +139,7 @@ check_staleness() {
     if [ -d "$RULES_HOME/.git" ]; then
         rules_hash="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "no-git")"
     else
-        rules_hash="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.css' -o -name '*.sh' \) -type f -exec $hash_cmd {} + 2>/dev/null | $hash_cmd | awk '{print $1}')"
+        rules_hash="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' \) -type f -exec $hash_cmd {} + 2>/dev/null | $hash_cmd | awk '{print $1}')"
     fi
 
     # -maxdepth 3: intentional trade-off — .agent-local.md deeper than 3 levels is unsupported

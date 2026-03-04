@@ -11,7 +11,8 @@ set -euo pipefail
 #   4. Staleness (rules repo newer than generated files)
 #   5. File existence (all expected files present)
 #   6. Core .mdc semantic validation (alwaysApply must be true)
-#   7. .vscode/settings.json validity (if exists)
+#   7. Skills deployment validation (manifest + directory integrity)
+#   8. .vscode/settings.json validity (if exists)
 
 show_help() {
     cat <<'EOF'
@@ -36,7 +37,8 @@ CHECKS PERFORMED
     4. Staleness detection (rules repo newer than generated files)
     5. Generated file existence (CLAUDE.md, AGENTS.md, .mdc files)
     6. Core .mdc alwaysApply validation (core rules must be always-on)
-    7. .vscode/settings.json validity
+    7. Skills deployment validation (manifest + directory integrity)
+    8. .vscode/settings.json validity
 
 EXAMPLES
     agent-check                  # Check rules in current directory
@@ -73,7 +75,7 @@ echo "================================"
 
 echo ""
 # Codex size check is advisory — Codex is not the primary tool in this workflow
-echo "[1/7] Codex AGENTS.md size limit (advisory)"
+echo "[1/8] Codex AGENTS.md size limit (advisory)"
 
 if [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ]; then
     SIZE=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
@@ -90,7 +92,7 @@ fi
 # --- 2. Cursor frontmatter lint ---
 
 echo ""
-echo "[2/7] Cursor .mdc frontmatter validation"
+echo "[2/8] Cursor .mdc frontmatter validation"
 
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     MDC_COUNT=0
@@ -127,7 +129,7 @@ fi
 # --- 3. No dual-write conflict ---
 
 echo ""
-echo "[3/7] Cursor dual-write conflict check"
+echo "[3/8] Cursor dual-write conflict check"
 
 if [ -f "$PROJECT_DIR/.cursorrules" ] && [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     warn ".cursorrules AND .cursor/rules/ both exist. .mdc files may silently override .cursorrules. Remove one."
@@ -138,7 +140,7 @@ fi
 # --- 4. Staleness check ---
 
 echo ""
-echo "[4/7] Staleness detection"
+echo "[4/8] Staleness detection"
 
 if [ -f "$HASH_FILE" ]; then
     STORED_HASH="$(cat "$HASH_FILE" 2>/dev/null || echo "none")"
@@ -150,7 +152,7 @@ if [ -f "$HASH_FILE" ]; then
         HASH_CMD="shasum"
         command -v shasum &>/dev/null || HASH_CMD="sha1sum"
         command -v $HASH_CMD &>/dev/null || HASH_CMD="md5sum"
-        CURRENT_RULES_HASH="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.css' -o -name '*.sh' \) -type f -exec $HASH_CMD {} + 2>/dev/null | $HASH_CMD | awk '{print $1}')"
+        CURRENT_RULES_HASH="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' \) -type f -exec $HASH_CMD {} + 2>/dev/null | $HASH_CMD | awk '{print $1}')"
     fi
 
     if [ "$CURRENT_RULES_HASH" = "$STORED_RULES_HASH" ]; then
@@ -165,7 +167,7 @@ fi
 # --- 5. File existence ---
 
 echo ""
-echo "[5/7] Generated file existence"
+echo "[5/8] Generated file existence"
 
 # CLAUDE.md is required; AGENTS.md is advisory (Codex is not the primary tool)
 if [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ]; then
@@ -195,7 +197,7 @@ fi
 # --- 6. Core .mdc semantic validation ---
 
 echo ""
-echo "[6/7] Core .mdc alwaysApply validation"
+echo "[6/8] Core .mdc alwaysApply validation"
 
 CORE_PATTERNS=("00-communication" "10-workflow" "20-quality-gates")
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
@@ -215,10 +217,49 @@ if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     done
 fi
 
-# --- 7. .vscode/settings.json validity ---
+# --- 7. Skills deployment validation ---
 
 echo ""
-echo "[7/7] .vscode/settings.json validation"
+echo "[7/8] Skills deployment validation"
+
+SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
+SKILLS_SRC="$RULES_HOME/skills"
+HAS_SOURCE_SKILLS=false
+if [ -d "$SKILLS_SRC" ] && [ "$(ls -d "$SKILLS_SRC"/*/ 2>/dev/null)" ]; then
+    HAS_SOURCE_SKILLS=true
+fi
+
+if $HAS_SOURCE_SKILLS; then
+    if [ -f "$SKILLS_MANIFEST" ]; then
+        SKILLS_OK=true
+        SKILLS_CHECKED=0
+        while IFS= read -r skill_name; do
+            [ -z "$skill_name" ] && continue
+            SKILLS_CHECKED=$((SKILLS_CHECKED + 1))
+            skill_dir="$PROJECT_DIR/.cursor/skills/$skill_name"
+            if [ -d "$skill_dir" ] && [ "$(ls -A "$skill_dir" 2>/dev/null)" ]; then
+                pass "Skill '$skill_name' deployed and non-empty"
+            else
+                fail "Skill '$skill_name' listed in manifest but missing or empty"
+                SKILLS_OK=false
+            fi
+        done < "$SKILLS_MANIFEST"
+        if [ "$SKILLS_CHECKED" -eq 0 ]; then
+            fail "Skills manifest exists but is empty. Run agent-sync to regenerate."
+        elif $SKILLS_OK; then
+            pass "All $SKILLS_CHECKED manifest skills are deployed"
+        fi
+    else
+        fail "Rules repo has skills but .agent-sync-skills-manifest not found. Run agent-sync."
+    fi
+else
+    pass "No skills in rules repo (nothing to validate)"
+fi
+
+# --- 8. .vscode/settings.json validity ---
+
+echo ""
+echo "[8/8] .vscode/settings.json validation"
 
 VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
 if [ -f "$VSCODE_SETTINGS" ]; then
