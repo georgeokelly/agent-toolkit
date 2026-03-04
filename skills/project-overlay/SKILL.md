@@ -47,6 +47,12 @@ description: Create or update project-specific AI configuration (.agent-local.md
 | `init-guide.md` | 本 skill 目录 | 初始化对话脚本 |
 | `update-guide.md` | 本 skill 目录 | 更新对话脚本 |
 
+## 语言约束
+
+- **对话语言**：跟随用户语言（如中文）
+- **文件输出语言**：`.agent-local.md` / `.agent-local.md.tmp` 的所有内容 **MUST** 使用英文（HTML 注释除外），与 `overlay-template.md` 保持一致
+- **原因**：`agent-sync` 直接从 `.agent-local.md` 提取内容生成下游规则文件，非英文内容会导致规则中英混杂
+
 ## 跨工具消费
 
 `.agent-local.md` 通过 `agent-sync` 编译为多个工具的规则：

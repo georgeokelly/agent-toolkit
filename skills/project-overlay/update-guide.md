@@ -161,3 +161,4 @@ Agent 在日常任务中检测到以下偏差信号时, 主动提议更新:
 - 所有格式约束与 init-guide 相同（Packs 格式、Section 标题一致性、HTML 注释闭合等）
 - 更新时不要重写未涉及的 Section, 最小化变更范围
 - `.bak` 文件在用户确认全部 Section 后可保留（供后续手动回滚参考）
+- **输出语言分离**：与用户的对话交互跟随用户语言（如中文），但写入 `.agent-local.md.tmp` 的所有内容 **MUST** 使用英文（HTML 注释除外）。规则同 init-guide。

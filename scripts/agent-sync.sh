@@ -107,7 +107,8 @@ resolve_packs() {
     ACTIVE_PACKS="$default_packs"
     if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
         local overlay_packs
-        overlay_packs="$(sed -n 's/^\*\*Packs\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1)"
+        # Strip inline HTML comments left by project-overlay skill (e.g. <!-- [推断] ... -->)
+        overlay_packs="$(sed -n 's/^\*\*Packs\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1 | sed 's/<!--.*-->//')"
         if [ -n "$overlay_packs" ]; then
             ACTIVE_PACKS="$(echo "$overlay_packs" | tr ',' ' ' | xargs)"
         fi
