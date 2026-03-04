@@ -67,6 +67,12 @@ Migration:
 Co-authored-by: Cursor <cursoragent@cursor.com>
 ```
 
+## Commit Execution Policy (MUST)
+
+- **MUST NOT** run `git commit` unless the user explicitly instructs to commit (e.g., "commit", "提交", "帮我commit")
+- When the user asks for a commit command (e.g., "给我个commit命令"), **MUST** output the command for the user to review and run manually — **MUST NOT** execute it directly
+- `git add`, `git status`, `git diff` and other non-committing git commands are fine to run proactively
+
 ## What NOT to include (MUST NOT)
 
 - **MUST NOT** include secrets, API keys, or tokens in commit messages
