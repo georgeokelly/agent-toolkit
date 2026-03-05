@@ -38,6 +38,17 @@ agent-toolkit/                   ← This repo / 本仓库
     └── <command-name>.md
 ```
 
+### Naming Conventions / 命名约定
+
+| Type / 类型 | Format / 格式 | Pattern / 模式 | Examples / 示例 |
+|---|---|---|---|
+| `skill-name` | kebab-case | `<verb>-<noun>` | `parse-ncu`, `profile-kernel`, `cluster-launch` |
+| `command-name` | kebab-case | imperative verb phrase | `pre-commit`, `run-bench`, `review` |
+
+- **MUST** use lowercase letters and hyphens only — no underscores, no camelCase / 只允许小写字母和连字符，禁止下划线和驼峰
+- **MUST** start with a verb for skills (`parse-`, `profile-`, `run-`) — names should describe *what the skill does* / Skill 名必须以动词开头，体现其功能
+- **SHOULD** keep names under 24 characters / 名称建议不超过 24 个字符
+
 ---
 
 ## 3. Setup / 安装
@@ -80,9 +91,17 @@ git commit -m "Add <command-name> command"
 
 ---
 
-## 6. Roadmap
+## 6. Skills & Commands
+
+See [`skills/README.md`](skills/README.md) and [`commands/README.md`](commands/README.md) for the full catalog.
+
+---
+
+## 7. Roadmap
 
 - [ ] **Cluster Agent skill** — Provides a cluster-launched agent with structured working context: target compute node, Docker container, code/data paths, and an ordered task list; reports results after each step and halts on error.
   为在 cluster 上启动的 agent 提供结构化的工作环境上下文：目标 compute node、Docker 容器名、代码/数据路径，以及需要按序执行的任务列表；每步执行后报告结果，遇错即停。
 - [ ] **Nsight Compute skill** — Parses `.ncu-rep` profile reports, extracts key metrics (memory throughput, compute throughput, warp efficiency, etc.), and provides targeted optimization recommendations.
   解析 `.ncu-rep` profile 报告，提取关键 metric（memory throughput、compute throughput、warp efficiency 等），并给出针对性的优化建议。
+- [ ] **render-report skill** — Converts a structured Markdown analysis document into a self-contained, presentable HTML report: renders inline data as interactive charts, lays out conclusions as styled callouts, and presents principles with figures and prose side-by-side.
+  将结构化的 Markdown 分析文档转换为独立 HTML 报告：内联数据渲染为交互式图表，分析结论以醒目样式呈现，原理部分支持图文并排排版，可直接在浏览器中展示或分发。
