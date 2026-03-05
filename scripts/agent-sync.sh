@@ -16,6 +16,7 @@ USAGE
     agent-sync codex [project-dir]        Only generate AGENTS.md
     agent-sync claude [project-dir]       Only generate CLAUDE.md
     agent-sync skills [project-dir]       Only sync skills to .cursor/skills/
+    agent-sync commands [project-dir]     Only sync commands to .cursor/commands/
     agent-sync clean [project-dir]        Remove all generated files
     agent-sync -h | --help                Show this help message
 
@@ -39,10 +40,13 @@ SUBCOMMANDS
     skills      Only sync skills from $AGENT_RULES_HOME/skills/ to
                 .cursor/skills/ in the target project (root only).
 
+    commands    Only sync commands from $AGENT_RULES_HOME/commands/ to
+                .cursor/commands/ in the target project (root only).
+
     clean       Remove all generated files:
-                .cursor/rules/*.mdc, .cursor/skills/, .agent-rules/,
-                .agent-sync-hash, .agent-sync-manifest, and
-                sub-repo CLAUDE.md/AGENTS.md.
+                .cursor/rules/*.mdc, .cursor/skills/, .cursor/commands/,
+                .agent-rules/, .agent-sync-hash, .agent-sync-manifest,
+                and sub-repo CLAUDE.md/AGENTS.md.
 
 EXAMPLES
     agent-sync                  # Full sync to current directory
@@ -59,7 +63,7 @@ EOF
 SUBCOMMAND="sync"
 case "${1:-}" in
     -h|--help) show_help ;;
-    codex|claude|skills|clean)
+    codex|claude|skills|commands|clean)
         SUBCOMMAND="$1"
         shift
         ;;
@@ -154,7 +158,7 @@ check_staleness() {
         stored_hash="$(cat "$HASH_FILE")"
     fi
 
-    local cursor_exists=false claude_exists=false agents_exists=false skills_ok=true
+    local cursor_exists=false claude_exists=false agents_exists=false skills_ok=true commands_ok=true
     [ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls -A "$PROJECT_DIR/.cursor/rules/" 2>/dev/null)" ] && cursor_exists=true
     [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ] && claude_exists=true
     [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ] && agents_exists=true
@@ -162,8 +166,12 @@ check_staleness() {
     if [ -d "$RULES_HOME/skills" ] && [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
         [ -f "$SKILLS_MANIFEST" ] || skills_ok=false
     fi
+    # If rules repo has commands, ensure they are deployed
+    if [ -d "$RULES_HOME/commands" ] && [ "$(ls "$RULES_HOME/commands/"*.md 2>/dev/null)" ]; then
+        [ -f "$COMMANDS_MANIFEST" ] || commands_ok=false
+    fi
 
-    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists && $skills_ok; then
+    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists && $skills_ok && $commands_ok; then
         echo "Rules up to date. No sync needed."
         exit 0
     fi
@@ -254,6 +262,45 @@ generate_skills() {
 
     mv "$manifest_new" "$SKILLS_MANIFEST"
     echo "  Skills: $count skill(s) synced to .cursor/skills/"
+}
+
+# Deploy commands from $RULES_HOME/commands/ to project root .cursor/commands/
+# Commands are flat .md files (not directories like skills).
+# Uses manifest for precise cleanup; convergent sync to avoid stale files.
+COMMANDS_MANIFEST="$PROJECT_DIR/.cursor/commands/.agent-sync-commands-manifest"
+
+generate_commands() {
+    local commands_src="$RULES_HOME/commands"
+    [ -d "$commands_src" ] || return 0
+
+    local cmd_file cmd_name
+    local count=0
+    local manifest_new="${COMMANDS_MANIFEST}.new"
+    mkdir -p "$PROJECT_DIR/.cursor/commands"
+    : > "$manifest_new"
+
+    for cmd_file in "$commands_src"/*.md; do
+        [ -f "$cmd_file" ] || continue
+        cmd_name="$(basename "$cmd_file")"
+        cp "$cmd_file" "$PROJECT_DIR/.cursor/commands/$cmd_name"
+        echo "$cmd_name" >> "$manifest_new"
+        count=$((count + 1))
+    done
+
+    # Remove commands that were previously synced but no longer exist in source
+    if [ -f "$COMMANDS_MANIFEST" ]; then
+        local old_cmd
+        while IFS= read -r old_cmd; do
+            [ -z "$old_cmd" ] && continue
+            if [ ! -f "$commands_src/$old_cmd" ]; then
+                rm -f "$PROJECT_DIR/.cursor/commands/$old_cmd"
+                echo "  Removed stale command: $old_cmd"
+            fi
+        done < "$COMMANDS_MANIFEST"
+    fi
+
+    mv "$manifest_new" "$COMMANDS_MANIFEST"
+    echo "  Commands: $count command(s) synced to .cursor/commands/"
 }
 
 generate_claude() {
@@ -376,6 +423,22 @@ do_clean() {
         echo "           Run 'agent-sync .' to regenerate manifest, then 'agent-sync clean' to retry."
     fi
 
+    # Clean only agent-sync managed commands (manifest-based)
+    if [ -f "$COMMANDS_MANIFEST" ]; then
+        local old_cmd
+        while IFS= read -r old_cmd; do
+            [ -z "$old_cmd" ] && continue
+            rm -f "$PROJECT_DIR/.cursor/commands/$old_cmd"
+        done < "$COMMANDS_MANIFEST"
+        rm -f "$COMMANDS_MANIFEST"
+        rmdir "$PROJECT_DIR/.cursor/commands" 2>/dev/null || true
+        echo "  Removed agent-sync managed commands"
+    elif [ -d "$PROJECT_DIR/.cursor/commands" ]; then
+        echo "  WARNING: .cursor/commands/ exists but no manifest found."
+        echo "           Cannot determine which commands were managed by agent-sync."
+        echo "           Run 'agent-sync .' to regenerate manifest, then 'agent-sync clean' to retry."
+    fi
+
     rmdir "$PROJECT_DIR/.cursor" 2>/dev/null || true
 
     if [ -d "$PROJECT_DIR/.agent-rules" ]; then
@@ -438,6 +501,12 @@ case "$SUBCOMMAND" in
         generate_skills
         echo "Done."
         ;;
+    commands)
+        validate_rules_repo
+        echo "Syncing commands to $PROJECT_DIR/.cursor/commands/ ..."
+        generate_commands
+        echo "Done."
+        ;;
     sync)
         validate_rules_repo
         check_staleness
@@ -445,6 +514,7 @@ case "$SUBCOMMAND" in
         resolve_packs
         generate_cursor
         generate_skills
+        generate_commands
         # generate_codex internally calls generate_claude first
         generate_codex
         cleanup_remnants

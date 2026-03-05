@@ -68,6 +68,9 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │   ├── HISTORY.md               # Canonical issue records / Issue 历史主记录
 │   └── README.md
 │
+├── commands/                    ← Cursor slash-commands / Cursor 斜杠命令
+│   └── pre-commit.md            # /pre-commit — draft git commit command / 草拟 git commit 命令
+│
 ├── scripts/
 │   ├── agent-sync.sh            # Sync rules to project / 同步规则到项目
 │   ├── agent-check.sh           # Validate generated files / 验证生成文件
@@ -170,6 +173,8 @@ claude-run      # Claude Code via wrapper (see below) / 通过 wrapper 启动 Cl
 agent-sync .              # Full sync (default): Cursor + Claude + Codex / 全量同步（默认）
 agent-sync codex .        # Only regenerate AGENTS.md / 仅重新生成 AGENTS.md
 agent-sync claude .       # Only regenerate CLAUDE.md / 仅重新生成 CLAUDE.md
+agent-sync skills .       # Only sync skills to .cursor/skills/ / 仅同步 skills
+agent-sync commands .     # Only sync commands to .cursor/commands/ / 仅同步 commands
 agent-sync clean .        # Remove all generated files / 清理所有生成文件
 ```
 
@@ -292,6 +297,7 @@ Run `agent-check .` in your project directory. It checks:
 | File existence | All expected files present in `.agent-rules/` / `.agent-rules/` 中预期文件是否存在 |
 | Root remnants | No `CLAUDE.md`/`AGENTS.md` at project root / 根目录无残留文件 |
 | Core semantics | Core `.mdc` files have `alwaysApply: true` / Core 文件必须始终加载 |
+| Commands deployment | `.cursor/commands/` matches manifest from rules repo / commands 已部署且与 manifest 一致 |
 | Settings validity | `.vscode/settings.json` is valid JSON (if present) / 配置文件 JSON 有效性 |
 
 ---
