@@ -77,3 +77,12 @@ git commit -m "Add <command-name> command"
 ```
 
 `agent-sync` deploys it to `.cursor/commands/<command-name>.md` on next run.
+
+---
+
+## 6. Roadmap
+
+- [ ] **Cluster Agent skill** — Provides a cluster-launched agent with structured working context: target compute node, Docker container, code/data paths, and an ordered task list; reports results after each step and halts on error.
+  为在 cluster 上启动的 agent 提供结构化的工作环境上下文：目标 compute node、Docker 容器名、代码/数据路径，以及需要按序执行的任务列表；每步执行后报告结果，遇错即停。
+- [ ] **Nsight Compute skill** — Parses `.ncu-rep` profile reports, extracts key metrics (memory throughput, compute throughput, warp efficiency, etc.), and provides targeted optimization recommendations.
+  解析 `.ncu-rep` profile 报告，提取关键 metric（memory throughput、compute throughput、warp efficiency 等），并给出针对性的优化建议。
