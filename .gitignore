@@ -1,0 +1,11 @@
+.DS_Store
+
+# Agent sync metadata (generated files, should not be committed)
+.cursor/
+.cursorignore
+*/AGENTS.md
+*/CLAUDE.md
+.agent-sync-hash
+.agent-sync-manifest
+.agent-local.md
+.agent-reports/
