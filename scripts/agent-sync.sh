@@ -38,6 +38,7 @@ ENVIRONMENT
 
 SUBCOMMANDS
     (default)   Full sync: generates Cursor .mdc files, CLAUDE.md, AGENTS.md,
+                deploys .cursor/worktrees.json (if template exists),
                 applies project overlays, handles sub-repo overlays, and
                 cleans up root-level remnants. Skips if already up to date.
 
@@ -55,6 +56,7 @@ SUBCOMMANDS
 
     clean       Remove all generated files:
                 .cursor/rules/*.mdc, .cursor/skills/, .cursor/commands/,
+                .cursor/worktrees.json (if agent-sync managed),
                 .agent-rules/, .agent-sync-hash, .agent-sync-manifest,
                 and sub-repo CLAUDE.md/AGENTS.md.
 
@@ -389,6 +391,27 @@ generate_commands() {
     echo "  Commands: $count command(s) synced to .cursor/commands/"
 }
 
+# Deploy .cursor/worktrees.json from template (skip if user has a custom version).
+# Uses a sidecar stamp file to track ownership — JSON has no comment syntax.
+WORKTREES_TEMPLATE="$RULES_HOME/templates/worktrees.json"
+WORKTREES_TARGET="$PROJECT_DIR/.cursor/worktrees.json"
+WORKTREES_STAMP="$PROJECT_DIR/.cursor/.worktrees-agent-sync"
+
+generate_worktrees() {
+    [ -f "$WORKTREES_TEMPLATE" ] || return 0
+    mkdir -p "$PROJECT_DIR/.cursor"
+
+    if [ -f "$WORKTREES_TARGET" ] && [ ! -f "$WORKTREES_STAMP" ]; then
+        _warn "  SKIP: .cursor/worktrees.json exists and is not managed by agent-sync."
+        _warn "        To let agent-sync manage it, delete it and re-run."
+        return 0
+    fi
+
+    cp "$WORKTREES_TEMPLATE" "$WORKTREES_TARGET"
+    touch "$WORKTREES_STAMP"
+    echo "  Worktrees: .cursor/worktrees.json deployed"
+}
+
 generate_claude() {
     mkdir -p "$PROJECT_DIR/.agent-rules"
     local claude_file="$PROJECT_DIR/.agent-rules/CLAUDE.md"
@@ -541,6 +564,15 @@ do_clean() {
         _warn "           Run 'agent-sync .' to regenerate manifest, then 'agent-sync clean' to retry."
     fi
 
+    # Clean worktrees.json only if agent-sync owns it (stamp file exists)
+    if [ -f "$PROJECT_DIR/.cursor/.worktrees-agent-sync" ]; then
+        rm -f "$PROJECT_DIR/.cursor/worktrees.json"
+        rm -f "$PROJECT_DIR/.cursor/.worktrees-agent-sync"
+        echo "  Removed .cursor/worktrees.json (agent-sync managed)"
+    elif [ -f "$PROJECT_DIR/.cursor/worktrees.json" ]; then
+        _warn "  SKIP: .cursor/worktrees.json is not managed by agent-sync — left intact."
+    fi
+
     rmdir "$PROJECT_DIR/.cursor" 2>/dev/null || true
 
     if [ -d "$PROJECT_DIR/.agent-rules" ]; then
@@ -617,6 +649,7 @@ case "$SUBCOMMAND" in
         generate_cursor
         generate_skills
         generate_commands
+        generate_worktrees
         # generate_codex internally calls generate_claude first
         generate_codex
         cleanup_remnants

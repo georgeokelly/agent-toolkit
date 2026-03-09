@@ -31,6 +31,7 @@ Determine what to review from the user's message:
   - `git diff --cached` — staged changes; **prioritize this when the user mentions "commit", "pre-commit", or "staged"**.
   - `git diff <ref1>..<ref2>` — changes between specific refs.
 - **No explicit target**: ask the user to specify what should be reviewed when there are no user-specified files or currently open files. Do not proceed without a clear scope.
+- **Worktree fallback**: in worktree-backed runs, review targets may be absent from the current workspace. See "Parallel-Agent / Worktree path safety" in Step 4 for read/search fallback rules.
 - **Large targets**: when the resolved scope contains more than ~20 files or ~5 000 lines of content, do not attempt to review everything in one pass. Instead: (1) summarize the overall structure and identify the highest-risk areas; (2) perform deep review on those areas first; (3) note which areas were skipped and why. Inform the user of this strategy before proceeding.
 
 ### Step 2 — Apply review criteria
@@ -91,6 +92,14 @@ Check whether the user's message contains a save directive: "save to", "write to
 - Resolve relative paths against the root of the currently active workspace folder (the folder containing `.cursor/`), then normalize/canonicalize the full path before writing.
 - Paths that contain traversal intent (e.g., `..`) or normalize outside the workspace **MUST NOT** be written.
 - If the user explicitly requests an absolute path outside the workspace, ask for confirmation before any write operation.
+
+**Parallel-Agent / Worktree path safety**:
+
+- In worktree-backed review runs, do not assume the current relative-path workspace is a full mirror of the host workspace.
+- If `.cursor/host-workspace.json` exists, read it first and treat its `host_workspace_root` field as the canonical host workspace root for read/search fallback.
+- If review targets live in nested repositories or other paths that are missing from the current worktree, you **MAY** read/search them via canonical absolute paths under that canonical host root. If the metadata file is absent, fall back to the active workspace root.
+- When persisting review output, you **MUST** keep the final write target inside the active workspace and **SHOULD** prefer a workspace-relative path such as `reviews/<name>.md`. The host-root metadata is for read/search fallback only, not for direct writes.
+- Do **NOT** write review output directly to `~/.cursor/worktrees/...`, to the path recorded in `.cursor/host-workspace.json`, or to arbitrary host absolute paths just because they exist on disk; that can bypass the expected Apply / UI Diff workflow.
 
 **If a save path is specified:**
 

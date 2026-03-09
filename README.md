@@ -49,6 +49,7 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 │
 ├── templates/
 │   ├── overlay-template.md      # Template for .agent-local.md / 项目特定规则模板（含中文引导注释）
+│   ├── worktrees.json           # Worktree setup script for parallel agents / 并发 Agent worktree 初始化脚本
 │   └── cursor-frontmatter/      # YAML frontmatter for .mdc / Cursor 前置元数据
 │       ├── communication.yaml   # alwaysApply: true
 │       ├── workflow.yaml        # alwaysApply: true
@@ -302,7 +303,9 @@ Run `agent-check .` in your project directory. It checks:
 | File existence | All expected files present in `.agent-rules/` / `.agent-rules/` 中预期文件是否存在 |
 | Root remnants | No `CLAUDE.md`/`AGENTS.md` at project root / 根目录无残留文件 |
 | Core semantics | Core `.mdc` files have `alwaysApply: true` / Core 文件必须始终加载 |
+| Skills deployment | `.cursor/skills/` matches manifest from rules repo / skills 已部署且与 manifest 一致 |
 | Commands deployment | `.cursor/commands/` matches manifest from rules repo / commands 已部署且与 manifest 一致 |
+| Worktrees deployment | `.cursor/worktrees.json` exists and is valid JSON; if agent-sync managed, matches template / worktrees.json 已部署且 JSON 有效 |
 | Settings validity | `.vscode/settings.json` is valid JSON (if present) / 配置文件 JSON 有效性 |
 
 ---

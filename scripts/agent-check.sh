@@ -13,7 +13,8 @@ set -euo pipefail
 #   6. Core .mdc semantic validation (alwaysApply must be true)
 #   7. Skills deployment validation (manifest + directory integrity)
 #   8. Commands deployment validation (manifest + file integrity)
-#   9. .vscode/settings.json validity (if exists)
+#   9. Worktrees.json deployment validation
+#  10. .vscode/settings.json validity (if exists)
 
 show_help() {
     cat <<'EOF'
@@ -40,7 +41,8 @@ CHECKS PERFORMED
     6. Core .mdc alwaysApply validation (core rules must be always-on)
     7. Skills deployment validation (manifest + directory integrity)
     8. Commands deployment validation (manifest + file integrity)
-    9. .vscode/settings.json validity
+    9. Worktrees.json deployment validation
+   10. .vscode/settings.json validity
 
 EXAMPLES
     agent-check                  # Check rules in current directory
@@ -77,7 +79,7 @@ echo "================================"
 
 echo ""
 # Codex size check is advisory — Codex is not the primary tool in this workflow
-echo "[1/9] Codex AGENTS.md size limit (advisory)"
+echo "[1/10] Codex AGENTS.md size limit (advisory)"
 
 if [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ]; then
     SIZE=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
@@ -94,7 +96,7 @@ fi
 # --- 2. Cursor frontmatter lint ---
 
 echo ""
-echo "[2/9] Cursor .mdc frontmatter validation"
+echo "[2/10] Cursor .mdc frontmatter validation"
 
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     MDC_COUNT=0
@@ -131,7 +133,7 @@ fi
 # --- 3. No dual-write conflict ---
 
 echo ""
-echo "[3/9] Cursor dual-write conflict check"
+echo "[3/10] Cursor dual-write conflict check"
 
 if [ -f "$PROJECT_DIR/.cursorrules" ] && [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     warn ".cursorrules AND .cursor/rules/ both exist. .mdc files may silently override .cursorrules. Remove one."
@@ -142,7 +144,7 @@ fi
 # --- 4. Staleness check ---
 
 echo ""
-echo "[4/9] Staleness detection"
+echo "[4/10] Staleness detection"
 
 if [ -f "$HASH_FILE" ]; then
     STORED_HASH="$(cat "$HASH_FILE" 2>/dev/null || echo "none")"
@@ -169,7 +171,7 @@ fi
 # --- 5. File existence ---
 
 echo ""
-echo "[5/9] Generated file existence"
+echo "[5/10] Generated file existence"
 
 # CLAUDE.md is required; AGENTS.md is advisory (Codex is not the primary tool)
 if [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ]; then
@@ -199,7 +201,7 @@ fi
 # --- 6. Core .mdc semantic validation ---
 
 echo ""
-echo "[6/9] Core .mdc alwaysApply validation"
+echo "[6/10] Core .mdc alwaysApply validation"
 
 CORE_PATTERNS=("00-communication" "10-workflow" "20-quality-gates")
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
@@ -222,7 +224,7 @@ fi
 # --- 7. Skills deployment validation ---
 
 echo ""
-echo "[7/9] Skills deployment validation"
+echo "[7/10] Skills deployment validation"
 
 SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
 SKILLS_SRC="$RULES_HOME/skills"
@@ -261,7 +263,7 @@ fi
 # --- 8. Commands deployment validation ---
 
 echo ""
-echo "[8/9] Commands deployment validation"
+echo "[8/10] Commands deployment validation"
 
 COMMANDS_MANIFEST="$PROJECT_DIR/.cursor/commands/.agent-sync-commands-manifest"
 COMMANDS_SRC="$RULES_HOME/commands"
@@ -297,10 +299,49 @@ else
     pass "No commands in rules repo (nothing to validate)"
 fi
 
-# --- 9. .vscode/settings.json validity ---
+# --- 9. Worktrees.json deployment validation ---
 
 echo ""
-echo "[9/9] .vscode/settings.json validation"
+echo "[9/10] Worktrees.json deployment validation"
+
+WORKTREES_TEMPLATE="$RULES_HOME/templates/worktrees.json"
+WORKTREES_TARGET="$PROJECT_DIR/.cursor/worktrees.json"
+WORKTREES_STAMP="$PROJECT_DIR/.cursor/.worktrees-agent-sync"
+
+if [ -f "$WORKTREES_TEMPLATE" ]; then
+    if [ -f "$WORKTREES_TARGET" ]; then
+        # Validate JSON syntax
+        if command -v python3 &>/dev/null; then
+            if python3 -c "import json; json.load(open('$WORKTREES_TARGET'))" 2>/dev/null; then
+                pass ".cursor/worktrees.json is valid JSON"
+            else
+                fail ".cursor/worktrees.json is NOT valid JSON"
+            fi
+        else
+            warn "Cannot validate .cursor/worktrees.json syntax (python3 not available)"
+        fi
+
+        # If agent-sync managed, verify content matches template
+        if [ -f "$WORKTREES_STAMP" ]; then
+            if diff -q "$WORKTREES_TEMPLATE" "$WORKTREES_TARGET" >/dev/null 2>&1; then
+                pass ".cursor/worktrees.json matches template (agent-sync managed)"
+            else
+                warn ".cursor/worktrees.json differs from template. Run agent-sync to update."
+            fi
+        else
+            pass ".cursor/worktrees.json exists (user-managed)"
+        fi
+    else
+        warn ".cursor/worktrees.json not found. Run agent-sync to deploy worktree setup."
+    fi
+else
+    pass "No worktrees.json template in rules repo (nothing to validate)"
+fi
+
+# --- 10. .vscode/settings.json validity ---
+
+echo ""
+echo "[10/10] .vscode/settings.json validation"
 
 VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
 if [ -f "$VSCODE_SETTINGS" ]; then
