@@ -1,0 +1,4 @@
+description: Rust 2021 edition rules
+globs:
+  - "**/*.rs"
+  - "**/Cargo.toml"

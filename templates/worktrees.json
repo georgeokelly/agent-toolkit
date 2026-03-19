@@ -1,6 +1,6 @@
 {
   "setup-worktree-unix": [
     "mkdir -p .cursor",
-    "python3 - <<'PY'\nimport json\nimport os\nimport sys\nfrom pathlib import Path\n\nroot = os.environ.get('ROOT_WORKTREE_PATH', '')\nif not root:\n    sys.exit('ROOT_WORKTREE_PATH is not set; skipping host-workspace metadata generation')\npath = Path('.cursor/host-workspace.json')\npath.write_text(\n    json.dumps({'host_workspace_root': root}, indent=2) + '\\n',\n    encoding='utf-8',\n)\nPY"
+    "python3 - <<'PY'\nimport json\nimport os\nimport sys\nfrom pathlib import Path\n\nroot = os.environ.get('ROOT_WORKTREE_PATH', '')\nif not root:\n    print('ROOT_WORKTREE_PATH is not set; skipping host-workspace metadata generation', file=sys.stderr)\n    sys.exit(0)\npath = Path('.cursor/host-workspace.json')\npath.write_text(\n    json.dumps({'host_workspace_root': root}, indent=2) + '\\n',\n    encoding='utf-8',\n)\nPY"
   ]
 }

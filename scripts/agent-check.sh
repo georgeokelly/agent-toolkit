@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # agent-check.sh — Validate generated rule files in a project directory
@@ -148,21 +148,32 @@ echo "[4/10] Staleness detection"
 
 if [ -f "$HASH_FILE" ]; then
     STORED_HASH="$(cat "$HASH_FILE" 2>/dev/null || echo "none")"
-    STORED_RULES_HASH="${STORED_HASH%%:*}"
+
+    # Recompute the full composite hash using the same algorithm as agent-sync
+    HASH_CMD="shasum"
+    command -v shasum &>/dev/null || HASH_CMD="sha1sum"
+    command -v "$HASH_CMD" &>/dev/null || HASH_CMD="md5sum"
 
     if [ -d "$RULES_HOME/.git" ]; then
-        CURRENT_RULES_HASH="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "unknown")"
+        SUB_HASH="$(git -C "$RULES_HOME" submodule status 2>/dev/null | awk '{print $1}' | tr -d '+-U' | sort | tr -d '\n')"
+        CURRENT_RULES_HASH="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "no-git"):${SUB_HASH:-no-submodules}"
     else
-        HASH_CMD="shasum"
-        command -v shasum &>/dev/null || HASH_CMD="sha1sum"
-        command -v $HASH_CMD &>/dev/null || HASH_CMD="md5sum"
-        CURRENT_RULES_HASH="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' \) -type f -exec $HASH_CMD {} + 2>/dev/null | $HASH_CMD | awk '{print $1}')"
+        CURRENT_RULES_HASH="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' \) -type f -exec "$HASH_CMD" {} + 2>/dev/null | sort | "$HASH_CMD" | awk '{print $1}')"
     fi
 
-    if [ "$CURRENT_RULES_HASH" = "$STORED_RULES_HASH" ]; then
-        pass "Rules repo is up to date with last sync"
+    CURRENT_OVERLAY_HASH="$(find "$PROJECT_DIR" -maxdepth 3 -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' -type f -exec "$HASH_CMD" {} + 2>/dev/null | sort | "$HASH_CMD" | awk '{print $1}')"
+
+    CURRENT_REVIEWER_CONF_HASH=""
+    if [ -f "$PROJECT_DIR/.cursor/reviewer-models.conf" ]; then
+        CURRENT_REVIEWER_CONF_HASH="$("$HASH_CMD" "$PROJECT_DIR/.cursor/reviewer-models.conf" 2>/dev/null | awk '{print $1}')"
+    fi
+
+    CURRENT_HASH="${CURRENT_RULES_HASH}:${CURRENT_OVERLAY_HASH}:${CURRENT_REVIEWER_CONF_HASH}"
+
+    if [ "$CURRENT_HASH" = "$STORED_HASH" ]; then
+        pass "Rules are up to date with last sync (rules repo + overlays + reviewer config)"
     else
-        warn "Rules repo has been updated since last sync. Run agent-sync."
+        warn "Rules have been updated since last sync. Run agent-sync."
     fi
 else
     warn "No sync hash found. Has agent-sync been run?"

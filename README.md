@@ -34,7 +34,8 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 ├── core/                        ← Always loaded / 始终加载
 │   ├── 00-communication.md      # Output format, language, citations / 输出格式、语言、引用规范
 │   ├── 10-workflow.md           # 3-stage workflow + fast track / 三阶段工作流 + 快速通道
-│   └── 20-quality-gates.md      # Review checklist, doc standards / 审查清单、文档标准
+│   ├── 20-quality-gates.md      # Review checklist, doc standards / 审查清单、文档标准
+│   └── 30-review-criteria.md    # Shared review criteria for reviewer agents / 评审 Agent 共享评审标准
 │
 ├── packs/                       ← Loaded by file type / 按文件类型加载
 │   ├── python.md                # Python 3.10+ rules / Python 规范
@@ -50,13 +51,18 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 ├── templates/
 │   ├── overlay-template.md      # Template for .agent-local.md / 项目特定规则模板（含中文引导注释）
 │   ├── worktrees.json           # Worktree setup script for parallel agents / 并发 Agent worktree 初始化脚本
+│   ├── reviewer-models.conf     # Model config for multi-model review / 多模型评审模型配置
+│   ├── agents/
+│   │   └── reviewer-variant.md  # Template for model-specific reviewer agents / 模型特定评审 Agent 模板
 │   └── cursor-frontmatter/      # YAML frontmatter for .mdc / Cursor 前置元数据
 │       ├── communication.yaml   # alwaysApply: true
 │       ├── workflow.yaml        # alwaysApply: true
 │       ├── quality-gates.yaml   # alwaysApply: true
+│       ├── review-criteria.yaml # globs: .cursor/agents/reviewer*.md
 │       ├── python.yaml          # globs: "**/*.py"
 │       ├── cpp.yaml             # globs: "**/*.{cpp,h,hpp,cc}"
 │       ├── cuda.yaml            # globs: "**/*.{cu,cuh,h,hpp}"
+│       ├── rust.yaml            # globs: "**/*.rs"
 │       ├── pybind11.yaml        # description-based (AI decides relevance)
 │       ├── shell.yaml           # globs: "**/*.{sh,bash,zsh}"
 │       ├── swift.yaml           # globs: "**/*.swift"
@@ -81,9 +87,13 @@ agent-rules/                     ← This repo / 本仓库 (deployed to ~/.confi
 ├── extras/                      ← Domain-specific submodule bundles / 领域扩展 submodule 挂载点
 │   └── agent-toolkit/           # git submodule — optional skills & commands / 可选技能与命令扩展
 │
+├── agents/
+│   └── reviewer.md              # Base reviewer sub-agent (inherits parent model) / 基础评审 Agent（继承父模型）
+│
 ├── scripts/
 │   ├── agent-sync.sh            # Sync rules to project / 同步规则到项目
 │   ├── agent-check.sh           # Validate generated files / 验证生成文件
+│   ├── generate-reviewers.sh    # Generate model-specific reviewer variants / 生成模型特定评审变体
 │   └── async-agent-rules.sh     # Pull latest rules with unlock/relock flow / 拉取最新规则（解锁-重锁流程）
 │
 ├── LICENSE
@@ -470,7 +480,7 @@ Place `.agent-local.md` at the workspace root (shared rules) and in each sub-rep
 
 ---
 
-## 9. Roadmap
+## 11. Roadmap
 
 Detailed design docs and review history are tracked in `issue_history/`.
 

@@ -85,7 +85,7 @@ When the user requests a git commit **or** asks to generate a commit command, **
 
 ### Procedure
 
-1. Determine commit scope from staged files only (e.g., `git diff --cached --name-only`), and **MUST NOT** use unstaged/untracked workspace changes
+1. Determine commit scope from staged files only (e.g., `git diff --cached --name-only`), and **MUST NOT** use unstaged/untracked workspace changes. **Exception**: when invoked via `/pre-commit` unstaged fallback (nothing staged), use the files that `/pre-commit` will `git add` as the effective commit scope
 2. For each staged file, determine its directory ancestry (leaf → root)
 3. Collect candidate READMEs: the root `README.md` plus any `README.md` in directories on the ancestry paths of staged files
 4. For each candidate README, check whether it references content affected by the staged changes (e.g., API descriptions, file/module lists, usage examples, architecture diagrams)

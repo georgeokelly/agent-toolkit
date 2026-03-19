@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 # Terminal colors (disabled when stdout is not a TTY, e.g., piped output)
@@ -27,6 +27,7 @@ USAGE
     agent-sync claude [project-dir]       Only generate CLAUDE.md
     agent-sync skills [project-dir]       Only sync skills to .cursor/skills/
     agent-sync commands [project-dir]     Only sync commands to .cursor/commands/
+    agent-sync agents [project-dir]       Only sync agents to .cursor/agents/
     agent-sync clean [project-dir]        Remove all generated files
     agent-sync -h | --help                Show this help message
 
@@ -54,8 +55,11 @@ SUBCOMMANDS
     commands    Only sync commands from $AGENT_RULES_HOME/commands/ to
                 .cursor/commands/ in the target project (root only).
 
+    agents      Only sync agent configs from $AGENT_RULES_HOME/agents/ to
+                .cursor/agents/ in the target project (root only).
+
     clean       Remove all generated files:
-                .cursor/rules/*.mdc, .cursor/skills/, .cursor/commands/,
+                .cursor/rules/*.mdc, .cursor/skills/, .cursor/commands/, .cursor/agents/,
                 .cursor/worktrees.json (if agent-sync managed),
                 .agent-rules/, .agent-sync-hash, .agent-sync-manifest,
                 and sub-repo CLAUDE.md/AGENTS.md.
@@ -75,7 +79,7 @@ EOF
 SUBCOMMAND="sync"
 case "${1:-}" in
     -h|--help) show_help ;;
-    codex|claude|skills|commands|clean)
+    codex|claude|skills|commands|agents|clean)
         SUBCOMMAND="$1"
         shift
         ;;
@@ -166,21 +170,27 @@ check_staleness() {
         sub_hash="$(git -C "$RULES_HOME" submodule status 2>/dev/null | awk '{print $1}' | tr -d '+-U' | sort | tr -d '\n')"
         rules_hash="$(git -C "$RULES_HOME" rev-parse HEAD 2>/dev/null || echo "no-git"):${sub_hash:-no-submodules}"
     else
-        rules_hash="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' \) -type f -exec $hash_cmd {} + 2>/dev/null | $hash_cmd | awk '{print $1}')"
+        rules_hash="$(find "$RULES_HOME" \( -name '*.md' -o -name '*.yaml' -o -name '*.yml' -o -name '*.sh' \) -type f -exec "$hash_cmd" {} + 2>/dev/null | sort | "$hash_cmd" | awk '{print $1}')"
     fi
 
     # -maxdepth 3: intentional trade-off — .agent-local.md deeper than 3 levels is unsupported
     # to avoid costly full-tree traversal in large repos (build dirs, .venv, etc.)
     local overlay_hash
-    overlay_hash="$(find "$PROJECT_DIR" -maxdepth 3 -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' -type f -exec $hash_cmd {} + 2>/dev/null | $hash_cmd | awk '{print $1}')"
-    CURRENT_HASH="${rules_hash}:${overlay_hash}"
+    overlay_hash="$(find "$PROJECT_DIR" -maxdepth 3 -name '.agent-local.md' -not -path '*/.git/*' -not -path '*/node_modules/*' -type f -exec "$hash_cmd" {} + 2>/dev/null | sort | "$hash_cmd" | awk '{print $1}')"
+
+    # Include reviewer-models.conf so editing it triggers re-sync
+    local reviewer_conf_hash=""
+    if [ -f "$PROJECT_DIR/.cursor/reviewer-models.conf" ]; then
+        reviewer_conf_hash="$("$hash_cmd" "$PROJECT_DIR/.cursor/reviewer-models.conf" 2>/dev/null | awk '{print $1}')"
+    fi
+    CURRENT_HASH="${rules_hash}:${overlay_hash}:${reviewer_conf_hash}"
 
     local stored_hash=""
     if [ -f "$HASH_FILE" ]; then
         stored_hash="$(cat "$HASH_FILE")"
     fi
 
-    local cursor_exists=false claude_exists=false agents_exists=false skills_ok=true commands_ok=true
+    local cursor_exists=false claude_exists=false agents_exists=false skills_ok=true commands_ok=true cursor_agents_ok=true
     [ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls -A "$PROJECT_DIR/.cursor/rules/" 2>/dev/null)" ] && cursor_exists=true
     [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ] && claude_exists=true
     [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ] && agents_exists=true
@@ -192,8 +202,12 @@ check_staleness() {
     if [ -d "$RULES_HOME/commands" ] && [ "$(ls "$RULES_HOME/commands/"*.md 2>/dev/null)" ]; then
         [ -f "$COMMANDS_MANIFEST" ] || commands_ok=false
     fi
+    # If rules repo has agents, ensure they are deployed
+    if [ -d "$RULES_HOME/agents" ] && [ "$(ls "$RULES_HOME/agents/"*.md 2>/dev/null)" ]; then
+        [ -f "$CURSOR_AGENTS_MANIFEST" ] || cursor_agents_ok=false
+    fi
 
-    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists && $skills_ok && $commands_ok; then
+    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists && $skills_ok && $commands_ok && $cursor_agents_ok; then
         _ok "Rules up to date. No sync needed."
         exit 0
     fi
@@ -265,9 +279,8 @@ generate_skills() {
         # Convergent sync: clean target then copy fresh
         rm -rf "$target_dir"
         mkdir -p "$target_dir"
-        # Guard: skip copy if skill dir is empty (glob won't expand under set -e)
         if [ -n "$(ls -A "$skill_dir" 2>/dev/null)" ]; then
-            cp -R "$skill_dir"* "$target_dir/"
+            cp -a "$skill_dir/." "$target_dir/"
         fi
         echo "$skill_name" >> "$manifest_new"
         count=$((count + 1))
@@ -292,7 +305,7 @@ generate_skills() {
                 rm -rf "$target_dir"
                 mkdir -p "$target_dir"
                 if [ -n "$(ls -A "$skill_dir" 2>/dev/null)" ]; then
-                    cp -R "$skill_dir"* "$target_dir/"
+                    cp -a "$skill_dir/." "$target_dir/"
                 fi
                 echo "$skill_name" >> "$manifest_new"
                 count=$((count + 1))
@@ -327,6 +340,7 @@ generate_skills() {
 # Commands are flat .md files (not directories like skills).
 # Uses manifest for precise cleanup; convergent sync to avoid stale files.
 COMMANDS_MANIFEST="$PROJECT_DIR/.cursor/commands/.agent-sync-commands-manifest"
+CURSOR_AGENTS_MANIFEST="$PROJECT_DIR/.cursor/agents/.agent-sync-agents-manifest"
 
 generate_commands() {
     local commands_src="$RULES_HOME/commands"
@@ -391,6 +405,111 @@ generate_commands() {
     echo "  Commands: $count command(s) synced to .cursor/commands/"
 }
 
+# Deploy agent configs from $RULES_HOME/agents/ to project root .cursor/agents/
+# Agent configs are .md files with YAML frontmatter (name, model, readonly, etc.).
+# Uses manifest for precise cleanup; convergent sync to avoid stale files.
+
+generate_cursor_agents() {
+    local agents_src="$RULES_HOME/agents"
+    [ -d "$agents_src" ] || return 0
+
+    local agent_file agent_name
+    local count=0
+    local manifest_new="${CURSOR_AGENTS_MANIFEST}.new"
+    mkdir -p "$PROJECT_DIR/.cursor/agents"
+    : > "$manifest_new"
+
+    for agent_file in "$agents_src"/*.md; do
+        [ -f "$agent_file" ] || continue
+        agent_name="$(basename "$agent_file")"
+        cp "$agent_file" "$PROJECT_DIR/.cursor/agents/$agent_name"
+        echo "$agent_name" >> "$manifest_new"
+        count=$((count + 1))
+    done
+
+    # Deploy agents from extras/ — core takes priority; skip extras duplicates
+    if [ -d "$RULES_HOME/extras" ]; then
+        local extras_dir bundle_name
+        for extras_dir in "$RULES_HOME/extras"/*/; do
+            [ -d "$extras_dir/agents" ] || continue
+            bundle_name="$(basename "$extras_dir")"
+            for agent_file in "$extras_dir/agents"/*.md; do
+                [ -f "$agent_file" ] || continue
+                agent_name="$(basename "$agent_file")"
+                if [ -f "$agents_src/$agent_name" ]; then
+                    _warn "  SKIP: extras/$bundle_name agent '$agent_name' — same name exists in core (core wins)"
+                    _warn "        To use both, create a renamed copy or symlink in the extras bundle."
+                    continue
+                fi
+                cp "$agent_file" "$PROJECT_DIR/.cursor/agents/$agent_name"
+                echo "$agent_name" >> "$manifest_new"
+                count=$((count + 1))
+            done
+        done
+    fi
+
+    # Remove agents that were previously synced but no longer exist in any source
+    if [ -f "$CURSOR_AGENTS_MANIFEST" ]; then
+        local old_agent found extras_dir
+        while IFS= read -r old_agent; do
+            [ -z "$old_agent" ] && continue
+            found=false
+            [ -f "$agents_src/$old_agent" ] && found=true
+            if ! $found && [ -d "$RULES_HOME/extras" ]; then
+                for extras_dir in "$RULES_HOME/extras"/*/; do
+                    [ -f "${extras_dir}agents/$old_agent" ] && found=true && break
+                done
+            fi
+            if ! $found; then
+                rm -f "$PROJECT_DIR/.cursor/agents/$old_agent"
+                echo "  Removed stale agent: $old_agent"
+            fi
+        done < "$CURSOR_AGENTS_MANIFEST"
+    fi
+
+    mv "$manifest_new" "$CURSOR_AGENTS_MANIFEST"
+    echo "  Agents: $count agent(s) synced to .cursor/agents/"
+}
+
+# Deploy .cursor/reviewer-models.conf from template (skip if user has a custom version).
+# Uses a sidecar stamp file to track ownership — conf has comments but no ownership marker.
+REVIEWER_CONF_TEMPLATE="$RULES_HOME/templates/reviewer-models.conf"
+REVIEWER_CONF_TARGET="$PROJECT_DIR/.cursor/reviewer-models.conf"
+REVIEWER_CONF_STAMP="$PROJECT_DIR/.cursor/.reviewer-models-agent-sync"
+
+deploy_reviewer_models_conf() {
+    [ -f "$REVIEWER_CONF_TEMPLATE" ] || return 0
+    mkdir -p "$PROJECT_DIR/.cursor"
+
+    if [ -f "$REVIEWER_CONF_TARGET" ] && [ ! -f "$REVIEWER_CONF_STAMP" ]; then
+        _warn "  SKIP: .cursor/reviewer-models.conf exists and is not managed by agent-sync."
+        _warn "        To let agent-sync manage it, delete it and re-run."
+        return 0
+    fi
+
+    cp "$REVIEWER_CONF_TEMPLATE" "$REVIEWER_CONF_TARGET"
+    touch "$REVIEWER_CONF_STAMP"
+    echo "  Reviewer models: .cursor/reviewer-models.conf deployed"
+}
+
+# Generate model-specific reviewer sub-agent variants.
+# Delegates to generate-reviewers.sh which reads .cursor/reviewer-models.conf.
+REVIEWER_VARIANTS_MANIFEST="$PROJECT_DIR/.cursor/agents/.generated-reviewers-manifest"
+
+generate_reviewer_variants() {
+    local gen_script="$RULES_HOME/scripts/generate-reviewers.sh"
+    if [ ! -x "$gen_script" ]; then
+        return 0
+    fi
+
+    local conf_file="$PROJECT_DIR/.cursor/reviewer-models.conf"
+    if [ ! -f "$conf_file" ] && [ ! -f "$REVIEWER_VARIANTS_MANIFEST" ]; then
+        return 0
+    fi
+
+    AGENT_RULES_HOME="$RULES_HOME" "$gen_script" "$PROJECT_DIR"
+}
+
 # Deploy .cursor/worktrees.json from template (skip if user has a custom version).
 # Uses a sidecar stamp file to track ownership — JSON has no comment syntax.
 WORKTREES_TEMPLATE="$RULES_HOME/templates/worktrees.json"
@@ -418,9 +537,14 @@ generate_claude() {
     echo "<!-- Auto-generated by agent-sync. Do not edit manually. -->" > "$claude_file"
     echo "" >> "$claude_file"
 
-    local rule_file pack_name
+    local rule_file pack_name basename_no_ext
     for rule_file in "$RULES_HOME"/core/*.md; do
         [ -f "$rule_file" ] || continue
+        # Skip review-criteria — it contains reviewer-only constraints (readonly mode)
+        # that should not leak into normal Claude/Codex sessions.
+        # Cursor scopes it via globs in review-criteria.yaml; Claude/Codex have no equivalent.
+        basename_no_ext="$(basename "$rule_file" .md)"
+        [[ "$basename_no_ext" == *review-criteria* ]] && continue
         cat "$rule_file" >> "$claude_file"
         echo "" >> "$claude_file"
         echo "---" >> "$claude_file"
@@ -452,8 +576,13 @@ generate_codex() {
     generate_claude
 
     cp "$PROJECT_DIR/.agent-rules/CLAUDE.md" "$PROJECT_DIR/.agent-rules/AGENTS.md"
-    sed -i.bak '1s/.*<!-- Auto-generated.*/<!-- Auto-generated by agent-sync for Codex. Do not edit manually. -->/' "$PROJECT_DIR/.agent-rules/AGENTS.md" 2>/dev/null || true
-    rm -f "$PROJECT_DIR/.agent-rules/AGENTS.md.bak"
+    # Portable in-place edit: write to temp file then replace (avoids GNU vs BSD sed -i divergence)
+    local tmp_agents
+    tmp_agents="$(mktemp)"
+    sed '1s/.*<!-- Auto-generated.*/<!-- Auto-generated by agent-sync for Codex. Do not edit manually. -->/' \
+        "$PROJECT_DIR/.agent-rules/AGENTS.md" > "$tmp_agents" 2>/dev/null \
+        && mv "$tmp_agents" "$PROJECT_DIR/.agent-rules/AGENTS.md" \
+        || rm -f "$tmp_agents"
 
     local agents_size
     agents_size=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
@@ -464,7 +593,7 @@ generate_codex() {
 }
 
 cleanup_remnants() {
-    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/.cursorignore"
+    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
 }
 
 sync_sub_repos() {
@@ -564,6 +693,43 @@ do_clean() {
         _warn "           Run 'agent-sync .' to regenerate manifest, then 'agent-sync clean' to retry."
     fi
 
+    # Clean generated reviewer variants (from generate-reviewers.sh)
+    if [ -f "$REVIEWER_VARIANTS_MANIFEST" ]; then
+        local rv_entry rv_file
+        while IFS= read -r rv_entry; do
+            [ -z "$rv_entry" ] && continue
+            rv_file="$(echo "$rv_entry" | cut -d'|' -f1)"
+            rm -f "$PROJECT_DIR/.cursor/agents/$rv_file"
+        done < "$REVIEWER_VARIANTS_MANIFEST"
+        rm -f "$REVIEWER_VARIANTS_MANIFEST"
+        echo "  Removed generated reviewer variants"
+    fi
+
+    # Clean only agent-sync managed agents (manifest-based)
+    if [ -f "$CURSOR_AGENTS_MANIFEST" ]; then
+        local old_agent
+        while IFS= read -r old_agent; do
+            [ -z "$old_agent" ] && continue
+            rm -f "$PROJECT_DIR/.cursor/agents/$old_agent"
+        done < "$CURSOR_AGENTS_MANIFEST"
+        rm -f "$CURSOR_AGENTS_MANIFEST"
+        rmdir "$PROJECT_DIR/.cursor/agents" 2>/dev/null || true
+        echo "  Removed agent-sync managed agents"
+    elif [ -d "$PROJECT_DIR/.cursor/agents" ]; then
+        _warn "  WARNING: .cursor/agents/ exists but no manifest found."
+        _warn "           Cannot determine which agents were managed by agent-sync."
+        _warn "           Run 'agent-sync .' to regenerate manifest, then 'agent-sync clean' to retry."
+    fi
+
+    # Clean reviewer-models.conf only if agent-sync owns it
+    if [ -f "$REVIEWER_CONF_STAMP" ]; then
+        rm -f "$REVIEWER_CONF_TARGET"
+        rm -f "$REVIEWER_CONF_STAMP"
+        echo "  Removed .cursor/reviewer-models.conf (agent-sync managed)"
+    elif [ -f "$REVIEWER_CONF_TARGET" ]; then
+        _warn "  SKIP: .cursor/reviewer-models.conf is not managed by agent-sync — left intact."
+    fi
+
     # Clean worktrees.json only if agent-sync owns it (stamp file exists)
     if [ -f "$PROJECT_DIR/.cursor/.worktrees-agent-sync" ]; then
         rm -f "$PROJECT_DIR/.cursor/worktrees.json"
@@ -603,8 +769,8 @@ do_clean() {
         fi
     done
 
-    # Root-level remnants
-    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/.cursorignore"
+    # Root-level remnants (only files agent-sync historically created; never touch user-owned .cursorignore)
+    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
 
     _ok "Clean complete."
 }
@@ -641,6 +807,12 @@ case "$SUBCOMMAND" in
         generate_commands
         _ok "Done."
         ;;
+    agents)
+        validate_rules_repo
+        echo "Syncing agents to $PROJECT_DIR/.cursor/agents/ ..."
+        generate_cursor_agents
+        _ok "Done."
+        ;;
     sync)
         validate_rules_repo
         check_staleness
@@ -649,6 +821,9 @@ case "$SUBCOMMAND" in
         generate_cursor
         generate_skills
         generate_commands
+        generate_cursor_agents
+        deploy_reviewer_models_conf
+        generate_reviewer_variants
         generate_worktrees
         # generate_codex internally calls generate_claude first
         generate_codex
