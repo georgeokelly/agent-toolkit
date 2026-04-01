@@ -15,6 +15,10 @@ set -euo pipefail
 #   8. Commands deployment validation (manifest + file integrity)
 #   9. Worktrees.json deployment validation
 #  10. .vscode/settings.json validity (if exists)
+#  11. CC rules validation (.claude/rules/ frontmatter, when CC Mode != off)
+#  12. CC skills deployment validation (when CC Mode != off)
+#  13. CC commands deployment validation (when CC Mode != off)
+#  14. CC/Cursor consistency (rules count, skills set match)
 
 show_help() {
     cat <<'EOF'
@@ -43,6 +47,10 @@ CHECKS PERFORMED
     8. Commands deployment validation (manifest + file integrity)
     9. Worktrees.json deployment validation
    10. .vscode/settings.json validity
+   11. CC rules validation (when CC Mode != off)
+   12. CC skills deployment validation (when CC Mode != off)
+   13. CC commands deployment validation (when CC Mode != off)
+   14. CC/Cursor consistency (when CC Mode != off)
 
 EXAMPLES
     agent-check                  # Check rules in current directory
@@ -75,11 +83,25 @@ warn() { echo "  WARN: $1"; WARN=$((WARN + 1)); }
 echo "Checking rules in $PROJECT_DIR"
 echo "================================"
 
+# --- Detect CC Mode ---
+CC_MODE="dual"
+if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+    _cc_mode="$(sed -n 's/^\*\*CC Mode\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1 | sed 's/<!--.*-->//' | xargs)"
+    case "$_cc_mode" in
+        off|dual|native) CC_MODE="$_cc_mode" ;;
+    esac
+fi
+
+TOTAL_CHECKS=10
+if [ "$CC_MODE" != "off" ]; then
+    TOTAL_CHECKS=14
+fi
+
 # --- 1. Codex AGENTS.md size ---
 
 echo ""
 # Codex size check is advisory — Codex is not the primary tool in this workflow
-echo "[1/10] Codex AGENTS.md size limit (advisory)"
+echo "[1/$TOTAL_CHECKS] Codex AGENTS.md size limit (advisory)"
 
 if [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ]; then
     SIZE=$(wc -c < "$PROJECT_DIR/.agent-rules/AGENTS.md" | tr -d ' ')
@@ -96,7 +118,7 @@ fi
 # --- 2. Cursor frontmatter lint ---
 
 echo ""
-echo "[2/10] Cursor .mdc frontmatter validation"
+echo "[2/$TOTAL_CHECKS] Cursor .mdc frontmatter validation"
 
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     MDC_COUNT=0
@@ -133,7 +155,7 @@ fi
 # --- 3. No dual-write conflict ---
 
 echo ""
-echo "[3/10] Cursor dual-write conflict check"
+echo "[3/$TOTAL_CHECKS] Cursor dual-write conflict check"
 
 if [ -f "$PROJECT_DIR/.cursorrules" ] && [ -d "$PROJECT_DIR/.cursor/rules" ]; then
     warn ".cursorrules AND .cursor/rules/ both exist. .mdc files may silently override .cursorrules. Remove one."
@@ -144,7 +166,7 @@ fi
 # --- 4. Staleness check ---
 
 echo ""
-echo "[4/10] Staleness detection"
+echo "[4/$TOTAL_CHECKS] Staleness detection"
 
 if [ -f "$HASH_FILE" ]; then
     STORED_HASH="$(cat "$HASH_FILE" 2>/dev/null || echo "none")"
@@ -182,7 +204,7 @@ fi
 # --- 5. File existence ---
 
 echo ""
-echo "[5/10] Generated file existence"
+echo "[5/$TOTAL_CHECKS] Generated file existence"
 
 # CLAUDE.md is required; AGENTS.md is advisory (Codex is not the primary tool)
 if [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ]; then
@@ -212,7 +234,7 @@ fi
 # --- 6. Core .mdc semantic validation ---
 
 echo ""
-echo "[6/10] Core .mdc alwaysApply validation"
+echo "[6/$TOTAL_CHECKS] Core .mdc alwaysApply validation"
 
 CORE_PATTERNS=("00-communication" "10-workflow" "20-quality-gates")
 if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
@@ -235,7 +257,7 @@ fi
 # --- 7. Skills deployment validation ---
 
 echo ""
-echo "[7/10] Skills deployment validation"
+echo "[7/$TOTAL_CHECKS] Skills deployment validation"
 
 SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
 SKILLS_SRC="$RULES_HOME/skills"
@@ -274,7 +296,7 @@ fi
 # --- 8. Commands deployment validation ---
 
 echo ""
-echo "[8/10] Commands deployment validation"
+echo "[8/$TOTAL_CHECKS] Commands deployment validation"
 
 COMMANDS_MANIFEST="$PROJECT_DIR/.cursor/commands/.agent-sync-commands-manifest"
 COMMANDS_SRC="$RULES_HOME/commands"
@@ -313,7 +335,7 @@ fi
 # --- 9. Worktrees.json deployment validation ---
 
 echo ""
-echo "[9/10] Worktrees.json deployment validation"
+echo "[9/$TOTAL_CHECKS] Worktrees.json deployment validation"
 
 WORKTREES_TEMPLATE="$RULES_HOME/templates/worktrees.json"
 WORKTREES_TARGET="$PROJECT_DIR/.cursor/worktrees.json"
@@ -352,7 +374,7 @@ fi
 # --- 10. .vscode/settings.json validity ---
 
 echo ""
-echo "[10/10] .vscode/settings.json validation"
+echo "[10/$TOTAL_CHECKS] .vscode/settings.json validation"
 
 VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
 if [ -f "$VSCODE_SETTINGS" ]; then
@@ -374,6 +396,154 @@ if [ -f "$VSCODE_SETTINGS" ]; then
 else
     pass ".vscode/settings.json not present (no validation needed)"
 fi
+
+# --- 11-14. CC native checks (only when CC Mode != off) ---
+
+if [ "$CC_MODE" != "off" ]; then
+
+# --- 11. CC rules validation ---
+
+echo ""
+echo "[11/$TOTAL_CHECKS] CC rules validation (.claude/rules/)"
+
+if [ -d "$PROJECT_DIR/.claude/rules" ]; then
+    CC_RULE_COUNT=0
+    CC_RULE_FAIL=0
+    for cc_rule in "$PROJECT_DIR/.claude/rules/"*.md; do
+        [ -f "$cc_rule" ] || continue
+        CC_RULE_COUNT=$((CC_RULE_COUNT + 1))
+
+        # Validate frontmatter if present: must have matching --- delimiters
+        FIRST_LINE=$(head -1 "$cc_rule")
+        if [ "$FIRST_LINE" = "---" ]; then
+            CLOSING=$(awk 'NR>1 && /^---$/{print NR; exit}' "$cc_rule")
+            if [ -z "$CLOSING" ]; then
+                fail "CC rule $(basename "$cc_rule"): missing closing --- in frontmatter"
+                CC_RULE_FAIL=$((CC_RULE_FAIL + 1))
+            fi
+        fi
+    done
+
+    if [ "$CC_RULE_COUNT" -eq 0 ]; then
+        fail "No .md files found in .claude/rules/"
+    elif [ "$CC_RULE_FAIL" -eq 0 ]; then
+        pass "All $CC_RULE_COUNT CC rule files have valid frontmatter"
+    fi
+else
+    fail ".claude/rules/ directory not found (CC Mode: $CC_MODE)"
+fi
+
+# --- 12. CC skills validation ---
+
+echo ""
+echo "[12/$TOTAL_CHECKS] CC skills deployment validation"
+
+CC_SKILLS_MF="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
+CC_HAS_SOURCE_SKILLS=false
+if [ -d "$RULES_HOME/skills" ] && [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
+    CC_HAS_SOURCE_SKILLS=true
+fi
+
+if $CC_HAS_SOURCE_SKILLS; then
+    if [ -f "$CC_SKILLS_MF" ]; then
+        CC_SKILLS_OK=true
+        CC_SKILLS_CHECKED=0
+        while IFS= read -r cc_skill_name; do
+            [ -z "$cc_skill_name" ] && continue
+            CC_SKILLS_CHECKED=$((CC_SKILLS_CHECKED + 1))
+            cc_skill_dir="$PROJECT_DIR/.claude/skills/$cc_skill_name"
+            if [ -d "$cc_skill_dir" ] && [ "$(ls -A "$cc_skill_dir" 2>/dev/null)" ]; then
+                pass "CC skill '$cc_skill_name' deployed"
+            else
+                fail "CC skill '$cc_skill_name' listed in manifest but missing or empty"
+                CC_SKILLS_OK=false
+            fi
+        done < "$CC_SKILLS_MF"
+        if [ "$CC_SKILLS_CHECKED" -eq 0 ]; then
+            fail "CC skills manifest exists but is empty. Run agent-sync."
+        elif $CC_SKILLS_OK; then
+            pass "All $CC_SKILLS_CHECKED CC skills are deployed"
+        fi
+    else
+        fail "Rules repo has skills but CC skills manifest not found. Run agent-sync."
+    fi
+else
+    pass "No skills in rules repo (CC skills: nothing to validate)"
+fi
+
+# --- 13. CC commands validation ---
+
+echo ""
+echo "[13/$TOTAL_CHECKS] CC commands deployment validation"
+
+CC_COMMANDS_MF="$PROJECT_DIR/.claude/commands/.agent-sync-commands-manifest"
+CC_HAS_SOURCE_COMMANDS=false
+if [ -d "$RULES_HOME/commands" ] && [ "$(ls "$RULES_HOME/commands"/*.md 2>/dev/null)" ]; then
+    CC_HAS_SOURCE_COMMANDS=true
+fi
+
+if $CC_HAS_SOURCE_COMMANDS; then
+    if [ -f "$CC_COMMANDS_MF" ]; then
+        CC_COMMANDS_OK=true
+        CC_COMMANDS_CHECKED=0
+        while IFS= read -r cc_cmd_name; do
+            [ -z "$cc_cmd_name" ] && continue
+            CC_COMMANDS_CHECKED=$((CC_COMMANDS_CHECKED + 1))
+            cc_cmd_file="$PROJECT_DIR/.claude/commands/$cc_cmd_name"
+            if [ -f "$cc_cmd_file" ]; then
+                pass "CC command '$cc_cmd_name' deployed"
+            else
+                fail "CC command '$cc_cmd_name' listed in manifest but missing"
+                CC_COMMANDS_OK=false
+            fi
+        done < "$CC_COMMANDS_MF"
+        if [ "$CC_COMMANDS_CHECKED" -eq 0 ]; then
+            fail "CC commands manifest exists but is empty. Run agent-sync."
+        elif $CC_COMMANDS_OK; then
+            pass "All $CC_COMMANDS_CHECKED CC commands are deployed"
+        fi
+    else
+        fail "Rules repo has commands but CC commands manifest not found. Run agent-sync."
+    fi
+else
+    pass "No commands in rules repo (CC commands: nothing to validate)"
+fi
+
+# --- 14. CC/Cursor consistency ---
+
+echo ""
+echo "[14/$TOTAL_CHECKS] CC/Cursor consistency"
+
+if [ -d "$PROJECT_DIR/.claude/rules" ] && [ -d "$PROJECT_DIR/.cursor/rules" ]; then
+    CURSOR_COUNT=$(ls "$PROJECT_DIR/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ')
+    CC_COUNT=$(ls "$PROJECT_DIR/.claude/rules/"*.md 2>/dev/null | wc -l | tr -d ' ')
+    # CC is expected to have fewer files (review-criteria is Cursor-only)
+    if [ "$CC_COUNT" -le "$CURSOR_COUNT" ] && [ "$CC_COUNT" -gt 0 ]; then
+        pass "CC rules ($CC_COUNT) <= Cursor rules ($CURSOR_COUNT) — consistent (CC excludes Cursor-only rules)"
+    elif [ "$CC_COUNT" -gt "$CURSOR_COUNT" ]; then
+        warn "CC rules ($CC_COUNT) > Cursor rules ($CURSOR_COUNT) — unexpected divergence"
+    else
+        warn "CC rules count is 0 but Cursor has $CURSOR_COUNT rules"
+    fi
+else
+    if [ ! -d "$PROJECT_DIR/.claude/rules" ]; then
+        warn "Cannot compare: .claude/rules/ not found"
+    fi
+fi
+
+# Check CC skills consistency with Cursor skills
+CURSOR_SKILLS_MF="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
+if [ -f "$CC_SKILLS_MF" ] && [ -f "$CURSOR_SKILLS_MF" ]; then
+    CURSOR_SKILL_SET=$(sort "$CURSOR_SKILLS_MF" | tr '\n' ',')
+    CC_SKILL_SET=$(sort "$CC_SKILLS_MF" | tr '\n' ',')
+    if [ "$CURSOR_SKILL_SET" = "$CC_SKILL_SET" ]; then
+        pass "CC and Cursor skill sets match"
+    else
+        warn "CC and Cursor skill sets differ — check agent-sync output"
+    fi
+fi
+
+fi  # end CC_MODE != off
 
 # --- Summary ---
 

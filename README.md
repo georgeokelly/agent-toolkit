@@ -242,30 +242,45 @@ Codex also supports subdirectory `AGENTS.md` files for layered rules. If your pr
 
 Codex 也支持子目录的 `AGENTS.md` 文件来分层加载规则。如果项目结构很大，可以考虑将 packs 拆分到子目录。
 
-### Claude Code
+### Claude Code (Native Support / 原生支持)
 
-`agent-sync` generates `.agent-rules/CLAUDE.md` (not at project root, to avoid Cursor duplicate injection). Claude Code requires `CLAUDE.md` at the project root, so a shell wrapper temporarily symlinks it during execution. This preserves Claude Code's native multi-level `CLAUDE.md` discovery (subdirectory lazy-loading).
+`agent-sync` now generates **native CC files** under `.claude/`:
 
-`agent-sync` 生成 `.agent-rules/CLAUDE.md`（不在项目根目录，以避免 Cursor 重复注入）。Claude Code 要求 `CLAUDE.md` 在项目根目录，因此需要通过 shell wrapper 在执行期间临时软链接。这保留了 Claude Code 原生的多层 `CLAUDE.md` 发现机制（子目录懒加载）。
+`agent-sync` 现在生成 **CC 原生文件**到 `.claude/` 目录下：
 
-**How Claude Code loads rules / Claude Code 的规则加载方式：**
+| Output / 输出 | Path / 路径 | Description / 描述 |
+|---|---|---|
+| Per-file rules | `.claude/rules/*.md` | Mirrors `.cursor/rules/*.mdc` with CC-native `paths:` frontmatter / 对应 Cursor 的 `.mdc`，使用 CC 原生 `paths:` 前置元数据 |
+| Skills | `.claude/skills/<name>/SKILL.md` | Same format as Cursor skills / 与 Cursor skills 格式一致 |
+| Commands | `.claude/commands/*.md` | CC legacy compatibility / CC 兼容层（CC 已将 commands 标记为 deprecated） |
 
-- Root `CLAUDE.md`: loaded automatically at startup (via symlink from wrapper) / 启动时自动加载（通过 wrapper 软链接）
-- Subdirectory `CLAUDE.md`: loaded when Claude works in that directory / 在该目录工作时按需加载
-- `~/.claude/CLAUDE.md`: personal global rules (apply to all projects) / 个人全局规则（适用于所有项目）
-- `CLAUDE.local.md`: auto-gitignored, for private project preferences / 自动加入 .gitignore，用于私有项目偏好
+**CC Mode**: Controlled by `**CC Mode**:` in `.agent-local.md`. Three modes: / 通过 `.agent-local.md` 中的 `**CC Mode**:` 控制，三种模式：
 
-**Tip / 提示**: Put your language preference (e.g., "Always respond in Chinese") in `~/.claude/CLAUDE.md` so it applies everywhere. / 把语言偏好（如"始终用中文回复"）放在 `~/.claude/CLAUDE.md` 中，这样所有项目都会生效。
+- `off` — No `.claude/` output / 不生成 `.claude/` 文件
+- `dual` (default) — Both `.claude/` native + legacy `.agent-rules/CLAUDE.md` / 同时生成 CC 原生文件和 legacy CLAUDE.md
+- `native` — `.claude/` only, skip legacy `CLAUDE.md`/`AGENTS.md` / 仅 CC 原生文件
 
-### Shell Wrapper for Codex / Claude Code
+**How CC loads rules natively / CC 原生规则加载方式：**
 
-Since `agent-sync` outputs to `.agent-rules/` instead of the project root, Codex and Claude Code need a wrapper that temporarily symlinks the rules file during execution. Add the following to `~/.zshrc` (or `~/.bashrc`):
+- `.claude/rules/*.md`: per-file rules, loaded based on `paths:` frontmatter or always-on (no frontmatter) / 分文件规则，按 `paths:` 条件加载或始终加载
+- `.claude/skills/<name>/SKILL.md`: skills, discovered natively / 技能，原生发现
+- Subdirectory `CLAUDE.md`: loaded when CC works in that directory / 子目录 CLAUDE.md 按需加载
+- `~/.claude/CLAUDE.md`: personal global rules / 个人全局规则
+- `CLAUDE.local.md`: auto-gitignored, for private project preferences / 私有项目偏好
 
-由于 `agent-sync` 将规则输出到 `.agent-rules/` 而非项目根目录，Codex 和 Claude Code 需要一个 wrapper 在执行期间临时软链接规则文件。将以下内容添加到 `~/.zshrc`（或 `~/.bashrc`）：
+**Tip / 提示**: With CC Mode `dual` or `native`, the shell wrapper is **no longer required** for Claude Code. Rules are discovered natively via `.claude/`. / 使用 CC Mode `dual` 或 `native` 时，Claude Code **不再需要** shell wrapper。规则通过 `.claude/` 原生发现。
+
+**Review workflow / Review 工作流**: The multi-model reviewer system (`.cursor/agents/`, `30-review-criteria.md`) is **Cursor-only** — it relies on Cursor's sub-agent Task architecture. / 多模型 reviewer 系统为 **Cursor 专属**。
+
+### Shell Wrapper for Codex / Claude Code (Legacy / 兼容层)
+
+The shell wrapper is now **optional for Claude Code** (only needed when CC Mode is `off`). It remains required for Codex.
+
+Claude Code 的 shell wrapper 现在是**可选的**（仅在 CC Mode 为 `off` 时需要）。Codex 仍然需要。
 
 ```bash
-# Temporary wrapper — remove when Codex/Claude Code support custom rule paths natively
-# 临时 wrapper — 待 Codex/Claude Code 原生支持自定义路径后移除
+# Legacy wrapper — optional for Claude Code with CC Mode dual/native
+# 兼容层 wrapper — CC Mode 为 dual/native 时 Claude Code 不需要
 
 _agent_with_rules() {
     local agent_cmd="$1"
@@ -291,13 +306,12 @@ _agent_with_rules() {
 }
 
 codex-run() { _agent_with_rules codex AGENTS.md "$@"; }
-claude-run() { _agent_with_rules claude CLAUDE.md "$@"; }
+claude-run() { _agent_with_rules claude CLAUDE.md "$@"; }  # optional with CC Mode dual/native
 ```
 
 **Exit criteria / 退出条件**: Remove the wrapper when any of these are met / 当以下任一条件满足时可移除 wrapper：
 
 - Codex supports `--agents` or equivalent custom path flag ([#10067](https://github.com/openai/codex/issues/10067))
-- Claude Code supports config-level custom `CLAUDE.md` path without bypassing multi-level discovery
 - Cursor supports disabling auto-injection of `AGENTS.md`/`CLAUDE.md` via settings or `.cursorignore`
 
 ---

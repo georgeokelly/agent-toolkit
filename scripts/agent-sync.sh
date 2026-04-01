@@ -46,8 +46,15 @@ SUBCOMMANDS
     codex       Only generate .agent-rules/AGENTS.md for Codex.
                 Always regenerates (skips staleness check).
 
-    claude      Only generate .agent-rules/CLAUDE.md for Claude Code.
+    claude      Only generate .agent-rules/CLAUDE.md for Claude Code (legacy).
                 Always regenerates (skips staleness check).
+
+    cc          Only generate all CC native files (.claude/rules/, skills/, commands/).
+                Always regenerates (skips staleness check).
+
+    cc-rules    Only generate .claude/rules/*.md for Claude Code.
+
+    cc-skills   Only sync skills to .claude/skills/.
 
     skills      Only sync skills from $AGENT_RULES_HOME/skills/ to
                 .cursor/skills/ in the target project (root only).
@@ -60,6 +67,7 @@ SUBCOMMANDS
 
     clean       Remove all generated files:
                 .cursor/rules/*.mdc, .cursor/skills/, .cursor/commands/, .cursor/agents/,
+                .claude/rules/, .claude/skills/, .claude/commands/,
                 .cursor/worktrees.json (if agent-sync managed),
                 .agent-rules/, .agent-sync-hash, .agent-sync-manifest,
                 and sub-repo CLAUDE.md/AGENTS.md.
@@ -68,7 +76,8 @@ EXAMPLES
     agent-sync                  # Full sync to current directory
     agent-sync ~/my-project     # Full sync to a specific project
     agent-sync codex .          # Regenerate only AGENTS.md
-    agent-sync claude .         # Regenerate only CLAUDE.md
+    agent-sync claude .         # Regenerate only CLAUDE.md (legacy)
+    agent-sync cc .             # Regenerate all CC native files
     agent-sync clean            # Remove all generated files
 EOF
     exit 0
@@ -79,7 +88,7 @@ EOF
 SUBCOMMAND="sync"
 case "${1:-}" in
     -h|--help) show_help ;;
-    codex|claude|skills|commands|agents|clean)
+    codex|claude|cc|cc-rules|cc-skills|skills|commands|agents|clean)
         SUBCOMMAND="$1"
         shift
         ;;
@@ -102,6 +111,11 @@ PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
 HASH_FILE="$PROJECT_DIR/.agent-sync-hash"
 MANIFEST="$PROJECT_DIR/.agent-sync-manifest"
+
+# CC (Claude Code) manifest paths for native .claude/ outputs
+CC_RULES_MANIFEST="$PROJECT_DIR/.claude/rules/.agent-sync-rules-manifest"
+CC_SKILLS_MANIFEST="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
+CC_COMMANDS_MANIFEST="$PROJECT_DIR/.claude/commands/.agent-sync-commands-manifest"
 
 # --- Validation ---
 
@@ -152,6 +166,27 @@ pack_is_active() {
     return 1
 }
 
+# --- CC Mode resolution ---
+# CC Mode controls Claude Code native output generation:
+#   off    — no .claude/ outputs (Cursor + legacy CLAUDE.md only)
+#   dual   — both .claude/ native + legacy CLAUDE.md (default)
+#   native — .claude/ native only, skip legacy CLAUDE.md/AGENTS.md
+
+CC_MODE="dual"
+
+resolve_cc_mode() {
+    if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+        local mode
+        mode="$(sed -n 's/^\*\*CC Mode\*\*:[[:space:]]*//p' "$PROJECT_DIR/.agent-local.md" | head -1 | sed 's/<!--.*-->//' | xargs)"
+        case "$mode" in
+            off|dual|native) CC_MODE="$mode" ;;
+            "") CC_MODE="dual" ;;
+            *) _warn "  WARNING: Unknown CC Mode '$mode'. Defaulting to 'dual'."; CC_MODE="dual" ;;
+        esac
+    fi
+    echo "  CC Mode: $CC_MODE"
+}
+
 # --- Staleness check (full sync only) ---
 
 CURRENT_HASH=""
@@ -194,9 +229,35 @@ check_staleness() {
     [ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls -A "$PROJECT_DIR/.cursor/rules/" 2>/dev/null)" ] && cursor_exists=true
     [ -f "$PROJECT_DIR/.agent-rules/CLAUDE.md" ] && claude_exists=true
     [ -f "$PROJECT_DIR/.agent-rules/AGENTS.md" ] && agents_exists=true
-    # If rules repo has skills, ensure they are deployed
-    if [ -d "$RULES_HOME/skills" ] && [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
-        [ -f "$SKILLS_MANIFEST" ] || skills_ok=false
+    # If rules repo has skills (core or extras), ensure they are all deployed
+    if [ -f "$SKILLS_MANIFEST" ]; then
+        local expected_skill actual_skill
+        # Check core skills
+        for expected_skill in "$RULES_HOME/skills"/*/; do
+            [ -d "$expected_skill" ] || continue
+            grep -qx "$(basename "$expected_skill")" "$SKILLS_MANIFEST" 2>/dev/null || { skills_ok=false; break; }
+        done
+        # Check extras skills
+        if $skills_ok && [ -d "$RULES_HOME/extras" ]; then
+            local extras_dir
+            for extras_dir in "$RULES_HOME/extras"/*/; do
+                [ -d "$extras_dir/skills" ] || continue
+                for expected_skill in "$extras_dir/skills"/*/; do
+                    [ -d "$expected_skill" ] || continue
+                    grep -qx "$(basename "$expected_skill")" "$SKILLS_MANIFEST" 2>/dev/null || { skills_ok=false; break 2; }
+                done
+            done
+        fi
+    else
+        # No manifest at all — need sync if any skills exist
+        if [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
+            skills_ok=false
+        elif [ -d "$RULES_HOME/extras" ]; then
+            local extras_dir
+            for extras_dir in "$RULES_HOME/extras"/*/; do
+                [ "$(ls -d "${extras_dir}skills/"*/ 2>/dev/null)" ] && { skills_ok=false; break; }
+            done
+        fi
     fi
     # If rules repo has commands, ensure they are deployed
     if [ -d "$RULES_HOME/commands" ] && [ "$(ls "$RULES_HOME/commands/"*.md 2>/dev/null)" ]; then
@@ -207,7 +268,13 @@ check_staleness() {
         [ -f "$CURSOR_AGENTS_MANIFEST" ] || cursor_agents_ok=false
     fi
 
-    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists && $skills_ok && $commands_ok && $cursor_agents_ok; then
+    # CC native artifacts: require .claude/rules/ when CC Mode is not off
+    local cc_rules_ok=true
+    if [ "$CC_MODE" != "off" ]; then
+        [ -d "$PROJECT_DIR/.claude/rules" ] && [ -n "$(ls "$PROJECT_DIR/.claude/rules/"*.md 2>/dev/null)" ] || cc_rules_ok=false
+    fi
+
+    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $claude_exists && $agents_exists && $skills_ok && $commands_ok && $cursor_agents_ok && $cc_rules_ok; then
         _ok "Rules up to date. No sync needed."
         exit 0
     fi
@@ -256,6 +323,69 @@ generate_cursor() {
     fi
 
     echo "  Cursor: $(ls "$PROJECT_DIR/.cursor/rules/"*.mdc 2>/dev/null | wc -l | tr -d ' ') .mdc files"
+}
+
+# Generate CC-native .claude/rules/*.md files.
+# Rule categories:
+#   A (always-on): core rules with alwaysApply — no frontmatter in CC (always loaded)
+#   B (path-scoped): packs with globs — CC uses paths: YAML list from cc-frontmatter/
+#   C (description-only): packs with only description — always-on in CC (no CC equivalent)
+#   D (Cursor-only): review-criteria — skipped entirely
+generate_cc_rules() {
+    mkdir -p "$PROJECT_DIR/.claude/rules"
+
+    local cc_fm_dir="$RULES_HOME/templates/cc-frontmatter"
+    local manifest_new="${CC_RULES_MANIFEST}.new"
+    : > "$manifest_new"
+
+    local rule_file basename_no_ext lookup_name target count=0
+    for rule_file in "$RULES_HOME"/core/*.md "$RULES_HOME"/packs/*.md; do
+        [ -f "$rule_file" ] || continue
+        basename_no_ext="$(basename "$rule_file" .md)"
+        # D-class: skip review-criteria (Cursor-only reviewer workflow)
+        [[ "$basename_no_ext" == *review-criteria* ]] && continue
+
+        lookup_name="$(echo "$basename_no_ext" | sed 's/^[0-9]*-//')"
+        target="$PROJECT_DIR/.claude/rules/${basename_no_ext}.md"
+
+        # B-class rules have a cc-frontmatter file with paths:
+        # A/C-class rules have no cc-frontmatter file → no frontmatter = always loaded
+        if [ -f "$cc_fm_dir/${lookup_name}.yaml" ]; then
+            echo "---" > "$target"
+            cat "$cc_fm_dir/${lookup_name}.yaml" >> "$target"
+            echo "---" >> "$target"
+            echo "" >> "$target"
+        else
+            : > "$target"
+        fi
+        cat "$rule_file" >> "$target"
+
+        echo "${basename_no_ext}.md" >> "$manifest_new"
+        count=$((count + 1))
+    done
+
+    # Project overlay as an always-on CC rule (no paths frontmatter)
+    if [ -f "$PROJECT_DIR/.agent-local.md" ]; then
+        target="$PROJECT_DIR/.claude/rules/project-overlay.md"
+        strip_html_comments < "$PROJECT_DIR/.agent-local.md" > "$target"
+        echo "project-overlay.md" >> "$manifest_new"
+        count=$((count + 1))
+    fi
+
+    # Remove CC rules that were previously synced but no longer exist
+    if [ -f "$CC_RULES_MANIFEST" ]; then
+        local old_rule
+        while IFS= read -r old_rule; do
+            [ -z "$old_rule" ] && continue
+            if ! grep -qx "$old_rule" "$manifest_new" 2>/dev/null; then
+                rm -f "$PROJECT_DIR/.claude/rules/$old_rule"
+                echo "  Removed stale CC rule: $old_rule"
+            fi
+        done < "$CC_RULES_MANIFEST"
+    fi
+
+    mv "$manifest_new" "$CC_RULES_MANIFEST"
+    echo "  CC Rules: $count .md files in .claude/rules/"
 }
 
 # Deploy skills from $RULES_HOME/skills/ to project root .cursor/skills/ (depth=0 only)
@@ -405,6 +535,138 @@ generate_commands() {
     echo "  Commands: $count command(s) synced to .cursor/commands/"
 }
 
+# Deploy skills to .claude/skills/ (CC native, mirrors generate_skills for Cursor).
+generate_cc_skills() {
+    local skills_src="$RULES_HOME/skills"
+    [ -d "$skills_src" ] || return 0
+
+    local skill_dir skill_name target_dir
+    local count=0
+    local manifest_new="${CC_SKILLS_MANIFEST}.new"
+    mkdir -p "$PROJECT_DIR/.claude/skills"
+    : > "$manifest_new"
+
+    for skill_dir in "$skills_src"/*/; do
+        [ -d "$skill_dir" ] || continue
+        skill_name="$(basename "$skill_dir")"
+        target_dir="$PROJECT_DIR/.claude/skills/$skill_name"
+        rm -rf "$target_dir"
+        mkdir -p "$target_dir"
+        if [ -n "$(ls -A "$skill_dir" 2>/dev/null)" ]; then
+            cp -a "$skill_dir/." "$target_dir/"
+        fi
+        echo "$skill_name" >> "$manifest_new"
+        count=$((count + 1))
+    done
+
+    # Deploy skills from extras/ — core takes priority
+    if [ -d "$RULES_HOME/extras" ]; then
+        local extras_dir bundle_name
+        for extras_dir in "$RULES_HOME/extras"/*/; do
+            [ -d "$extras_dir/skills" ] || continue
+            bundle_name="$(basename "$extras_dir")"
+            for skill_dir in "$extras_dir/skills"/*/; do
+                [ -d "$skill_dir" ] || continue
+                skill_name="$(basename "$skill_dir")"
+                if [ -d "$skills_src/$skill_name" ]; then
+                    continue
+                fi
+                target_dir="$PROJECT_DIR/.claude/skills/$skill_name"
+                rm -rf "$target_dir"
+                mkdir -p "$target_dir"
+                if [ -n "$(ls -A "$skill_dir" 2>/dev/null)" ]; then
+                    cp -a "$skill_dir/." "$target_dir/"
+                fi
+                echo "$skill_name" >> "$manifest_new"
+                count=$((count + 1))
+            done
+        done
+    fi
+
+    # Remove skills previously synced but no longer in any source
+    if [ -f "$CC_SKILLS_MANIFEST" ]; then
+        local old_skill found extras_dir
+        while IFS= read -r old_skill; do
+            [ -z "$old_skill" ] && continue
+            found=false
+            [ -d "$skills_src/$old_skill" ] && found=true
+            if ! $found && [ -d "$RULES_HOME/extras" ]; then
+                for extras_dir in "$RULES_HOME/extras"/*/; do
+                    [ -d "${extras_dir}skills/$old_skill" ] && found=true && break
+                done
+            fi
+            if ! $found; then
+                rm -rf "$PROJECT_DIR/.claude/skills/$old_skill"
+                echo "  Removed stale CC skill: $old_skill"
+            fi
+        done < "$CC_SKILLS_MANIFEST"
+    fi
+
+    mv "$manifest_new" "$CC_SKILLS_MANIFEST"
+    echo "  CC Skills: $count skill(s) synced to .claude/skills/"
+}
+
+# Deploy commands to .claude/commands/ (CC legacy compatibility surface).
+generate_cc_commands() {
+    local commands_src="$RULES_HOME/commands"
+    [ -d "$commands_src" ] || return 0
+
+    local cmd_file cmd_name
+    local count=0
+    local manifest_new="${CC_COMMANDS_MANIFEST}.new"
+    mkdir -p "$PROJECT_DIR/.claude/commands"
+    : > "$manifest_new"
+
+    for cmd_file in "$commands_src"/*.md; do
+        [ -f "$cmd_file" ] || continue
+        cmd_name="$(basename "$cmd_file")"
+        cp "$cmd_file" "$PROJECT_DIR/.claude/commands/$cmd_name"
+        echo "$cmd_name" >> "$manifest_new"
+        count=$((count + 1))
+    done
+
+    # Deploy commands from extras/ — core takes priority
+    if [ -d "$RULES_HOME/extras" ]; then
+        local extras_dir bundle_name
+        for extras_dir in "$RULES_HOME/extras"/*/; do
+            [ -d "$extras_dir/commands" ] || continue
+            bundle_name="$(basename "$extras_dir")"
+            for cmd_file in "$extras_dir/commands"/*.md; do
+                [ -f "$cmd_file" ] || continue
+                cmd_name="$(basename "$cmd_file")"
+                if [ -f "$commands_src/$cmd_name" ]; then
+                    continue
+                fi
+                cp "$cmd_file" "$PROJECT_DIR/.claude/commands/$cmd_name"
+                echo "$cmd_name" >> "$manifest_new"
+                count=$((count + 1))
+            done
+        done
+    fi
+
+    # Remove commands previously synced but no longer in any source
+    if [ -f "$CC_COMMANDS_MANIFEST" ]; then
+        local old_cmd found extras_dir
+        while IFS= read -r old_cmd; do
+            [ -z "$old_cmd" ] && continue
+            found=false
+            [ -f "$commands_src/$old_cmd" ] && found=true
+            if ! $found && [ -d "$RULES_HOME/extras" ]; then
+                for extras_dir in "$RULES_HOME/extras"/*/; do
+                    [ -f "${extras_dir}commands/$old_cmd" ] && found=true && break
+                done
+            fi
+            if ! $found; then
+                rm -f "$PROJECT_DIR/.claude/commands/$old_cmd"
+                echo "  Removed stale CC command: $old_cmd"
+            fi
+        done < "$CC_COMMANDS_MANIFEST"
+    fi
+
+    mv "$manifest_new" "$CC_COMMANDS_MANIFEST"
+    echo "  CC Commands: $count command(s) → .claude/commands/ (CC legacy — consider migrating to skills)"
+}
+
 # Deploy agent configs from $RULES_HOME/agents/ to project root .cursor/agents/
 # Agent configs are .md files with YAML frontmatter (name, model, readonly, etc.).
 # Uses manifest for precise cleanup; convergent sync to avoid stale files.
@@ -487,6 +749,7 @@ deploy_reviewer_models_conf() {
         return 0
     fi
 
+    [ -f "$REVIEWER_CONF_TARGET" ] && [ ! -w "$REVIEWER_CONF_TARGET" ] && rm -f "$REVIEWER_CONF_TARGET"
     cp "$REVIEWER_CONF_TEMPLATE" "$REVIEWER_CONF_TARGET"
     touch "$REVIEWER_CONF_STAMP"
     echo "  Reviewer models: .cursor/reviewer-models.conf deployed"
@@ -526,6 +789,7 @@ generate_worktrees() {
         return 0
     fi
 
+    [ -f "$WORKTREES_TARGET" ] && [ ! -w "$WORKTREES_TARGET" ] && rm -f "$WORKTREES_TARGET"
     cp "$WORKTREES_TEMPLATE" "$WORKTREES_TARGET"
     touch "$WORKTREES_STAMP"
     echo "  Worktrees: .cursor/worktrees.json deployed"
@@ -627,18 +891,34 @@ sync_sub_repos() {
             strip_html_comments < "$sub_overlay"
         } > "$mdc_target"
 
+        # CC native: generate a paths-scoped rule at project root .claude/rules/
+        if [ "$CC_MODE" != "off" ]; then
+            local cc_overlay_name="$(echo "$sub_rel" | tr '/' '-')-overlay.md"
+            local cc_overlay_target="$PROJECT_DIR/.claude/rules/$cc_overlay_name"
+            {
+                echo "---"
+                echo "paths:"
+                echo "  - \"${sub_rel}/**\""
+                echo "---"
+                echo ""
+                strip_html_comments < "$sub_overlay"
+            } > "$cc_overlay_target"
+        fi
+
         echo "$sub_rel" >> "$manifest_new"
         echo "  Sub-repo $sub_rel: CLAUDE.md + AGENTS.md + ${mdc_name} (overlay only, $(wc -c < "$sub_claude" | tr -d ' ') bytes)"
     done
 
     # Clean up ghost rule files from deleted sub-repo overlays
     if [ -f "$MANIFEST" ]; then
-        local old_rel ghost_mdc
+        local old_rel ghost_mdc ghost_cc
         while IFS= read -r old_rel; do
             if [ ! -f "$PROJECT_DIR/$old_rel/.agent-local.md" ]; then
                 rm -f "$PROJECT_DIR/$old_rel/CLAUDE.md" "$PROJECT_DIR/$old_rel/AGENTS.md"
                 ghost_mdc="$(echo "$old_rel" | tr '/' '-')-overlay.mdc"
                 rm -f "$PROJECT_DIR/.cursor/rules/$ghost_mdc"
+                ghost_cc="$(echo "$old_rel" | tr '/' '-')-overlay.md"
+                rm -f "$PROJECT_DIR/.claude/rules/$ghost_cc"
                 echo "  Cleaned ghost rules: $old_rel/ (overlay removed)"
             fi
         done < "$MANIFEST"
@@ -741,6 +1021,48 @@ do_clean() {
 
     rmdir "$PROJECT_DIR/.cursor" 2>/dev/null || true
 
+    # Clean CC native files (.claude/)
+    if [ -f "$CC_RULES_MANIFEST" ]; then
+        local old_rule
+        while IFS= read -r old_rule; do
+            [ -z "$old_rule" ] && continue
+            rm -f "$PROJECT_DIR/.claude/rules/$old_rule"
+        done < "$CC_RULES_MANIFEST"
+        rm -f "$CC_RULES_MANIFEST"
+        rmdir "$PROJECT_DIR/.claude/rules" 2>/dev/null || true
+        echo "  Removed agent-sync managed CC rules"
+    elif [ -d "$PROJECT_DIR/.claude/rules" ]; then
+        _warn "  WARNING: .claude/rules/ exists but no manifest found."
+    fi
+
+    if [ -f "$CC_SKILLS_MANIFEST" ]; then
+        local old_skill
+        while IFS= read -r old_skill; do
+            [ -z "$old_skill" ] && continue
+            rm -rf "$PROJECT_DIR/.claude/skills/$old_skill"
+        done < "$CC_SKILLS_MANIFEST"
+        rm -f "$CC_SKILLS_MANIFEST"
+        rmdir "$PROJECT_DIR/.claude/skills" 2>/dev/null || true
+        echo "  Removed agent-sync managed CC skills"
+    elif [ -d "$PROJECT_DIR/.claude/skills" ]; then
+        _warn "  WARNING: .claude/skills/ exists but no manifest found."
+    fi
+
+    if [ -f "$CC_COMMANDS_MANIFEST" ]; then
+        local old_cmd
+        while IFS= read -r old_cmd; do
+            [ -z "$old_cmd" ] && continue
+            rm -f "$PROJECT_DIR/.claude/commands/$old_cmd"
+        done < "$CC_COMMANDS_MANIFEST"
+        rm -f "$CC_COMMANDS_MANIFEST"
+        rmdir "$PROJECT_DIR/.claude/commands" 2>/dev/null || true
+        echo "  Removed agent-sync managed CC commands"
+    elif [ -d "$PROJECT_DIR/.claude/commands" ]; then
+        _warn "  WARNING: .claude/commands/ exists but no manifest found."
+    fi
+
+    rmdir "$PROJECT_DIR/.claude" 2>/dev/null || true
+
     if [ -d "$PROJECT_DIR/.agent-rules" ]; then
         rm -rf "$PROJECT_DIR/.agent-rules"
         echo "  Removed .agent-rules/"
@@ -813,8 +1135,33 @@ case "$SUBCOMMAND" in
         generate_cursor_agents
         _ok "Done."
         ;;
+    cc)
+        validate_rules_repo
+        resolve_packs
+        resolve_cc_mode
+        echo "Generating all CC native files in $PROJECT_DIR/.claude/ ..."
+        generate_cc_rules
+        generate_cc_skills
+        generate_cc_commands
+        _ok "Done."
+        ;;
+    cc-rules)
+        validate_rules_repo
+        resolve_packs
+        resolve_cc_mode
+        echo "Generating CC rules in $PROJECT_DIR/.claude/rules/ ..."
+        generate_cc_rules
+        _ok "Done."
+        ;;
+    cc-skills)
+        validate_rules_repo
+        echo "Syncing skills to $PROJECT_DIR/.claude/skills/ ..."
+        generate_cc_skills
+        _ok "Done."
+        ;;
     sync)
         validate_rules_repo
+        resolve_cc_mode
         check_staleness
         echo "Syncing rules from $RULES_HOME → $PROJECT_DIR"
         resolve_packs
@@ -825,8 +1172,19 @@ case "$SUBCOMMAND" in
         deploy_reviewer_models_conf
         generate_reviewer_variants
         generate_worktrees
-        # generate_codex internally calls generate_claude first
-        generate_codex
+        # CC native outputs (controlled by CC Mode)
+        if [ "$CC_MODE" != "off" ]; then
+            generate_cc_rules
+            generate_cc_skills
+            generate_cc_commands
+        fi
+        # Legacy CLAUDE.md / AGENTS.md (skipped in native-only mode)
+        if [ "$CC_MODE" != "native" ]; then
+            # generate_codex internally calls generate_claude first
+            generate_codex
+        else
+            echo "  CC Mode: native — skipping legacy CLAUDE.md / AGENTS.md generation"
+        fi
         cleanup_remnants
         sync_sub_repos
         store_hash

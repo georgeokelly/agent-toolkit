@@ -38,7 +38,12 @@
   - Packs: 声明本项目需要哪些语言包（会被拼接到 CLAUDE.md / AGENTS.md 中）
     可用的包名对应 packs/ 目录下的文件名（不含 .md 后缀）
     Cursor 的 .mdc 不受此设置影响（Cursor 通过 globs 自动按需加载）
+    CC 原生模式下也通过 paths: 按需加载，不受此设置影响
     默认值：cpp, cuda, python, markdown, shell, git
+  - CC Mode: 控制 Claude Code 原生输出的生成模式
+    off    — 不生成 .claude/ 下的文件（仅 Cursor + legacy CLAUDE.md）
+    dual   — 同时生成 .claude/ 原生文件和 legacy CLAUDE.md（默认）
+    native — 仅生成 .claude/ 原生文件，跳过 legacy CLAUDE.md/AGENTS.md
 
   @schema: section=Project Overview, required=true
   @schema: field=Project, format=bold_kv, required=true
@@ -47,6 +52,7 @@
   @schema: field=Build System, format=bold_kv, required=true, default="pip / setuptools"
   @schema: field=Target Platform, format=bold_kv, required=true, default="Linux"
   @schema: field=Packs, format=csv, required=true, values_from=packs/*.md, parsed_by=sed, default="cpp, cuda, python, markdown, shell, git"
+  @schema: field=CC Mode, format=bold_kv, required=false, default="dual", values="off,dual,native"
 -->
 **Project**: [TODO: project name] — [TODO: one-line description]
 **Boundary**: General-purpose (no special priority trade-offs)
@@ -55,6 +61,7 @@
 **Build System**: pip / setuptools
 **Target Platform**: Linux
 **Packs**: cpp, cuda, python, markdown, shell, git
+**CC Mode**: dual
 
 ## Project Structure
 

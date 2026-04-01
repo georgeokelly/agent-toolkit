@@ -1,3 +1,6 @@
+<!-- Cursor-only: multi-model reviewer workflow requires Cursor's sub-agent architecture.
+     This rule is excluded from CC (.claude/rules/) generation by agent-sync. -->
+
 # Review Criteria
 
 This rule defines shared review criteria, output format, and behavioral constraints for all reviewer sub-agents.

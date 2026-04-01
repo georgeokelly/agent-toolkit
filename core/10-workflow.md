@@ -83,4 +83,8 @@ Different AI tools have different autonomy levels. The same core rules apply, bu
 - **MAY** execute code and run tests after confirming intent with the user
 - **SHOULD** present a brief plan before executing multi-file changes
 - **MUST** ask before destructive operations (deleting files, force-pushing)
+- **SHOULD** use `/compact` proactively when conversation approaches context limit
+- **SHOULD** leverage hooks for repeatable checks (lint, test, format) instead of relying on manual instruction
+- **MUST NOT** modify `.claude/settings.json` without explicit user confirmation
+- **SHOULD** use `CLAUDE.local.md` for session-specific overrides rather than modifying shared `CLAUDE.md`
 - Workflow: exploratory — confirm at key decision points, execute between them
