@@ -84,7 +84,15 @@ main() {
   printf '[INFO] unlock completed\n' >&2
 
   printf '[INFO] pulling latest rules from origin/main...\n' >&2
-  git -C "${RULES_DIR}" pull --ff-only
+  if git -C "${RULES_DIR}" pull --ff-only; then
+    :
+  else
+    printf '[WARN] fast-forward failed (remote was likely force-pushed), resetting to origin/main...\n' >&2
+    git -C "${RULES_DIR}" fetch origin main
+    git -C "${RULES_DIR}" reset --hard origin/main
+  fi
+  printf '[INFO] updating submodules...\n' >&2
+  git -C "${RULES_DIR}" submodule update --init --recursive
   printf '[INFO] update completed for %s\n' "${RULES_DIR}" >&2
 }
 
