@@ -125,7 +125,20 @@ cleanup_remnants() {
     # always_applied_workspace_rules and duplicate every rule already
     # carried by .cursor/rules/*.mdc. AGENTS.override.md is exempt:
     # Cursor's auto-injection list is hard-coded to AGENTS.md/CLAUDE.md.
-    rm -f "$PROJECT_DIR/CLAUDE.md" "$PROJECT_DIR/AGENTS.md"
+    #
+    # Removal is unconditional (B1 strategy) — these two filenames are owned
+    # by agent-sync. If the user hand-authored either file, the next sync
+    # would silently delete it. Surface a warn so the destructive behavior
+    # is visible and the user has a clear pointer to .agent-local.md as the
+    # supported customization channel.
+    local stale_root
+    for stale_root in CLAUDE.md AGENTS.md; do
+        if [ -f "$PROJECT_DIR/$stale_root" ]; then
+            _warn "  REMOVE: root $stale_root present — agent-sync owns this filename to prevent Cursor double-injection."
+            _warn "          If this was hand-authored, move custom Codex content into .agent-local.md or AGENTS.override.md."
+            rm -f "$PROJECT_DIR/$stale_root"
+        fi
+    done
 
     # HIST-004 carry-over: pre-HIST-004 agent-sync wrote .agent-rules/CLAUDE.md.
     # HIST-007 follow-up: pre-HIST-007 agent-sync wrote .agent-rules/AGENTS.md.

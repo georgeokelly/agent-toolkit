@@ -78,35 +78,56 @@ AGENTS.md), then:
 
 ### Step 4 — Output the command
 
-Present copy-pasteable commands using HEREDOC format.
+Write the commit message to a file under `/tmp/`, then run
+`git commit -F` against that file. Do **NOT** use the
+`git commit -m "$(cat <<'EOF' ... EOF)"` nested-heredoc form —
+terminals frequently mis-parse nested command substitution,
+multi-line heredocs, and special characters (arrows, em-dashes,
+backticks, angle-bracket placeholders). Writing the message to a
+file first sidesteps the entire quoting problem and makes the
+message inspectable / retry-able after a failed commit.
 
-**When changes were already staged:**
+Output three commands as separate fenced blocks so the user runs
+them one by one and can inspect the message between steps:
+
+**1. Write message file** (single heredoc that only feeds `cat`,
+not nested inside another command substitution):
 
 ```bash
-git commit -m "$(cat <<'EOF'
+cat > /tmp/commit-msg-<topic>.txt <<'EOF'
 <title>
 
 <body>
 
 [Co-authored-by: ...]
 EOF
-)"
 ```
 
-**When nothing was staged (fallback to unstaged changes):**
+**2a. Commit when changes were already staged:**
 
 ```bash
-git add <files> && git commit -m "$(cat <<'EOF'
-<title>
-
-<body>
-
-[Co-authored-by: ...]
-EOF
-)"
+git commit -F /tmp/commit-msg-<topic>.txt
 ```
 
-The `git add` portion should list the specific files from the unstaged diff,
-or use `git add -A` if all changes should be included.
+**2b. Commit when nothing was staged (fallback to unstaged changes):**
 
-Do NOT run these commands. The user will review and execute them.
+```bash
+git add <files> && git commit -F /tmp/commit-msg-<topic>.txt
+```
+
+The `git add` portion should list the specific files from the
+unstaged diff, or use `git add -A` if all changes should be included.
+
+**3. Clean up the temp file** (output as a separate command so the
+message survives a failed commit and stays inspectable for retry):
+
+```bash
+rm /tmp/commit-msg-<topic>.txt
+```
+
+Filename convention: `/tmp/commit-msg-<short-topic>.txt` (e.g.
+`commit-msg-install-sh.txt`) so multiple parallel commits don't
+collide on the same temp file.
+
+Do NOT run any of these commands. The user will review and execute
+them.

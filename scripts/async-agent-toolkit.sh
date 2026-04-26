@@ -2,14 +2,14 @@
 set -euo pipefail
 
 ## [ABOUT] Update local agent-toolkit repo with safe unlock/relock flow.
-## [USAGE] bash async_agent_rules.sh
+## [USAGE] bash async-agent-toolkit.sh
 
-readonly RULES_DIR="${HOME}/.config/agent-toolkit"
+readonly TOOLKIT_DIR="${HOME}/.config/agent-toolkit"
 readonly LOCK_TARGETS=("core" "packs" "templates")
 
 show_help() {
   cat <<'EOF'
-bash async_agent_rules.sh
+bash async-agent-toolkit.sh
 
 Update local agent-toolkit repository:
 1) unlock writable permissions for managed rule folders
@@ -22,7 +22,7 @@ apply_mode_recursive() {
   local mode="$1"
   local target
   for target in "${LOCK_TARGETS[@]}"; do
-    chmod -R "${mode}" "${RULES_DIR}/${target}"
+    chmod -R "${mode}" "${TOOLKIT_DIR}/${target}"
   done
 }
 
@@ -43,15 +43,15 @@ validate_environment() {
     exit 1
   fi
 
-  if [[ ! -d "${RULES_DIR}/.git" ]]; then
-    printf '[ERROR] %s is not a git repository\n' "${RULES_DIR}" >&2
+  if [[ ! -d "${TOOLKIT_DIR}/.git" ]]; then
+    printf '[ERROR] %s is not a git repository\n' "${TOOLKIT_DIR}" >&2
     exit 1
   fi
 
   local target
   for target in "${LOCK_TARGETS[@]}"; do
-    if [[ ! -d "${RULES_DIR}/${target}" ]]; then
-      printf '[ERROR] missing rules subdirectory: %s\n' "${RULES_DIR}/${target}" >&2
+    if [[ ! -d "${TOOLKIT_DIR}/${target}" ]]; then
+      printf '[ERROR] missing toolkit subdirectory: %s\n' "${TOOLKIT_DIR}/${target}" >&2
       exit 1
     fi
   done
@@ -83,17 +83,17 @@ main() {
   apply_mode_recursive "u+w"
   printf '[INFO] unlock completed\n' >&2
 
-  printf '[INFO] pulling latest rules from origin/main...\n' >&2
-  if git -C "${RULES_DIR}" pull --ff-only; then
+  printf '[INFO] pulling latest toolkit from origin/main...\n' >&2
+  if git -C "${TOOLKIT_DIR}" pull --ff-only origin main; then
     :
   else
     printf '[WARN] fast-forward failed (remote was likely force-pushed), resetting to origin/main...\n' >&2
-    git -C "${RULES_DIR}" fetch origin main
-    git -C "${RULES_DIR}" reset --hard origin/main
+    git -C "${TOOLKIT_DIR}" fetch origin main
+    git -C "${TOOLKIT_DIR}" reset --hard origin/main
   fi
   printf '[INFO] updating submodules...\n' >&2
-  git -C "${RULES_DIR}" submodule update --init --recursive
-  printf '[INFO] update completed for %s\n' "${RULES_DIR}" >&2
+  git -C "${TOOLKIT_DIR}" submodule update --init --recursive
+  printf '[INFO] update completed for %s\n' "${TOOLKIT_DIR}" >&2
 }
 
 main "$@"

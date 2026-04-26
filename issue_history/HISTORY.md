@@ -47,6 +47,7 @@ Copy the block below when creating a new entry.
 
 | ID | Title / 标题 | Status / 状态 | Date / 日期 |
 |----|-------------|--------------|------------|
+| HIST-008 | 后台同步脚本改名（async-agent-rules → async-agent-toolkit） | Closed | 2026-04-26 |
 | HIST-007 | Codex 入口 AGENTS.override.md 化 + sub-repo 双注入修复 | Closed | 2026-04-25 |
 | HIST-006 | OpenCode 原生集成 + 每工具 subagent 部署骨架 | Closed | 2026-04-25 |
 | HIST-005 | Skill 命名空间前缀（`gla-` default） | Closed | 2026-04-21 |
@@ -59,6 +60,52 @@ Copy the block below when creating a new entry.
 ---
 
 ## Records / 记录
+
+### HIST-008: 后台同步脚本改名（async-agent-rules → async-agent-toolkit）
+
+- **Status / 状态**: Closed
+- **Date / 日期**: 2026-04-26
+- **Scope / 范围**: `scripts/async-agent-rules.sh` → `scripts/async-agent-toolkit.sh`、`install.sh`、`README.md`、`.agent-local.md`
+
+#### 背景 / Background
+
+项目早期名 "agent-rules"，后来定名 "agent-toolkit"。后台同步脚本与对应 alias 还保留旧名 `async-agent-rules` / `async-agent-rules.sh`，是项目命名收敛的最后一处遗漏。HIST-007 已经把 path 层的 `.agent-rules/` 目录退役（见 HIST-007 §背景），脚本/alias 层与项目名对齐是该方向的自然延伸。
+
+#### 设计 / Design
+
+脚本文件 + alias 名同步改成 `async-agent-toolkit` / `async-agent-toolkit.sh`。备选方案：
+
+- **A（采纳）**：直接改名 + 文档/install.sh 同步替换。一次性成本，最终状态干净。
+- **B**：保留旧名并加 alias 别名做"双名共存"。被否决——双名只会让用户在搜索/排错时多一层间接，且 `agent-toolkit` 名字下不应该再保留 `agent-rules` 字样。
+
+`issue_history/HISTORY.md` 内已有的老条目（HIST-006 与 HIST-004 §TODOs 中各有一处 `async-agent-rules.sh` 字样）按 append-only 原则**保留不动**——那些是当时的事实记录，通过追加本条而非修改老条目来说明改名事件。
+
+#### 实现 / Implementation
+
+| 文件 | 改动 |
+|------|------|
+| `scripts/async-agent-rules.sh` → `scripts/async-agent-toolkit.sh` | 文件 `mv`；脚本内 self-ref（`[USAGE]` 注释 + `show_help` heredoc）共 2 处随之更新 |
+| `install.sh` | 注释、`show_help` 的 WHAT IT DOES 列表、`_info` 中"To update later" / "scripts/async-...sh to update an existing install"提示、写入 rc 的 `alias` 行，共 12 处替换 |
+| `README.md` | §2 项目结构图、§3 Quick Start (Option B 手工安装步骤 + Update rules 段)、§4 注释，共 6 处 |
+| `.agent-local.md` | 项目结构图 1 处 |
+
+`bash -n` 通过：`scripts/async-agent-toolkit.sh`、`install.sh` 全部 syntax 干净。
+
+#### Limitations / 局限性
+
+- **存量 shell rc 中的旧 alias 不会被自动清理**：已经跑过老版 `install.sh` 的用户其 `.zshrc` / `.bashrc` 里仍有 `alias async-agent-rules=...`，指向已不存在的 `scripts/async-agent-rules.sh`，调用会失败。手工删除旧 alias 是一次性成本。本次未提供自动迁移脚本（影响面预期极小，且新 `install.sh` 由 `ALIAS_MARKER` 守卫只追加一次，不会与旧块互相破坏）。
+- **HISTORY 老条目内的 `async-agent-rules.sh` 引用未更新**：HIST-006 §TODOs、HIST-004 §TODOs 各一处。append-only 原则下保留——本条作为 cross-ref 入口，未来维护者只用脚本名搜索时仍能回到本条说明。
+
+#### Cross-refs / 关联
+
+- **HIST-001**：HIST-001 时代命名 "agent-rules"。HIST-001 → HIST-007 → HIST-008 是同一条命名收敛链路：HIST-001 引入 `agent-rules` 名字，HIST-007 退役 `.agent-rules/` 自建目录，HIST-008 收掉脚本/alias 层的最后一处旧名残留。
+- **HIST-007**：path 层与脚本层是两个独立位面，HIST-007 已经把前者退役；本条只补后者。
+
+#### TODOs / 遗留项
+
+- [ ] 若用户实际反馈"旧 alias 残留"问题频发，再考虑在 README §3 增加"升级旧 alias"小节（手工 `sed` `async-agent-rules` → `async-agent-toolkit`）。当前为避免 README 因小变更而膨胀，不主动加。
+
+---
 
 ### HIST-007: Codex 入口 AGENTS.override.md 化 + sub-repo 双注入修复
 

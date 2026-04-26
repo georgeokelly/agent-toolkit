@@ -11,14 +11,37 @@ _err()  { printf '%b%s%b\n' "$_R" "$*" "$_N"; }
 _warn() { printf '%b%s%b\n' "$_Y" "$*" "$_N"; }
 _ok()   { printf '%b%s%b\n' "$_G" "$*" "$_N"; }
 
+# Surface the perl/python3-missing fallback only once per agent-sync run,
+# regardless of how many sub-repo overlays trigger strip_html_comments.
+# Initialized here so set -u doesn't trip the first read in the function.
+_HTML_STRIP_WARNED=false
+
 strip_html_comments() {
-    perl -0777 -pe 's/<!--.*?-->\n?//gs' 2>/dev/null \
-        || python3 -c "
+    # Detect the available interpreter up-front so stdin is consumed at most
+    # once. The previous `||`-chain implementation would read stdin in perl
+    # and then leave python3 / cat with EOF on a partial-failure path.
+    if command -v perl >/dev/null 2>&1; then
+        perl -0777 -pe 's/<!--.*?-->\n?//gs'
+        return 0
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "
 import re, sys
 text = sys.stdin.read()
 print(re.sub(r'<!--.*?-->\n?', '', text, flags=re.DOTALL), end='')
-" 2>/dev/null \
-        || cat
+"
+        return 0
+    fi
+
+    # Last-resort fallback: pass content through verbatim so deployment does
+    # not fail. HTML comments will leak into generated artifacts; surface
+    # the degradation so the user can install perl or python3 to fix it.
+    if ! ${_HTML_STRIP_WARNED}; then
+        _warn "  strip_html_comments: perl and python3 both unavailable — HTML comments will leak into generated files."
+        _warn "                       Install perl or python3 to enable comment stripping."
+        _HTML_STRIP_WARNED=true
+    fi
+    cat
 }
 
 # --- Skill prefix frontmatter rewriter (HIST-005) ---
@@ -196,7 +219,25 @@ PY
                     $_ = "name = \"${p}${name}\"\n" unless index($name, $p) == 0;
                     $done = 1;
                 }
-            ' "$file" 2>/dev/null || true
+            ' "$file" 2>/dev/null && return 0
+
+            # python3 fallback — parity with the md/yaml branch so a perl-less
+            # environment (e.g. minimal Linux containers) still gets the
+            # prefix applied to TOML subagents instead of silently skipping.
+            SKILL_PREFIX="$SKILL_PREFIX" python3 - "$file" <<'PY' 2>/dev/null
+import os, re, sys
+path = sys.argv[1]
+prefix = os.environ["SKILL_PREFIX"]
+with open(path, "r", encoding="utf-8") as f:
+    text = f.read()
+def sub(m):
+    name = m.group(1).strip()
+    return m.group(0) if name.startswith(prefix) else f'name = "{prefix}{name}"'
+new = re.sub(r'^name\s*=\s*"([^"]+)"\s*$', sub, text, count=1, flags=re.MULTILINE)
+if new != text:
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(new)
+PY
             ;;
     esac
 }

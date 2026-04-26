@@ -129,38 +129,15 @@ RULES_HOME="${AGENT_TOOLKIT_HOME:-$HOME/.config/agent-toolkit}"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
-HASH_FILE="$PROJECT_DIR/.agent-sync-hash"
-MANIFEST="$PROJECT_DIR/.agent-sync-manifest"
-
-# Cursor manifest paths
-SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
-# HIST-006: Cursor subagents live in .cursor/agents/ (Cursor's native
-# per-project subagent convention). Manifest name mirrors the other
-# per-tool subagent trackers below.
-CURSOR_SUBAGENTS_MANIFEST="$PROJECT_DIR/.cursor/agents/.agent-sync-subagents-manifest"
-
-# CC (Claude Code) manifest paths
-CC_RULES_MANIFEST="$PROJECT_DIR/.claude/rules/.agent-sync-rules-manifest"
-CC_SKILLS_MANIFEST="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
-# HIST-006: Claude Code's subagent path is .claude/agents/ (one *.md per agent).
-CC_SUBAGENTS_MANIFEST="$PROJECT_DIR/.claude/agents/.agent-sync-subagents-manifest"
-
-# Codex manifest paths
-CODEX_SKILLS_MANIFEST="$PROJECT_DIR/.agents/skills/.agent-sync-codex-skills-manifest"
-CODEX_CONFIG_STAMP="$PROJECT_DIR/.codex/.config-toml-agent-sync"
-# HIST-006: Codex subagents live alongside skills under .agents/; the
-# dedicated .agents/agents/ subdir keeps them separate from the skill tree.
-CODEX_SUBAGENTS_MANIFEST="$PROJECT_DIR/.agents/agents/.agent-sync-subagents-manifest"
-
-# HIST-006: OpenCode manifest/stamp paths. opencode.json itself is
-# marker-gated in-file ("_generated_by": "agent-sync") so no stamp file is
-# needed for the root-level config.
-OPENCODE_SKILLS_MANIFEST="$PROJECT_DIR/.opencode/skills/.agent-sync-skills-manifest"
-OPENCODE_SUBAGENTS_MANIFEST="$PROJECT_DIR/.opencode/agent/.agent-sync-subagents-manifest"
-
 # --- Source library modules ---
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# paths.sh must be sourced AFTER PROJECT_DIR is set (it interpolates the
+# absolute path into HASH_FILE / MANIFEST / *_MANIFEST / *_STAMP) and BEFORE
+# any other lib (some helpers — e.g. clean.sh — read these constants when
+# their functions execute, but never at source time, so source-time order
+# only requires PROJECT_DIR existence).
+source "$SCRIPT_DIR/lib/paths.sh"
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/resolve.sh"
 source "$SCRIPT_DIR/lib/gen-cursor.sh"

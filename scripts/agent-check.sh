@@ -79,7 +79,12 @@ RULES_HOME="${AGENT_TOOLKIT_HOME:-$HOME/.config/agent-toolkit}"
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
-HASH_FILE="$PROJECT_DIR/.agent-sync-hash"
+# Pull in the shared per-project artifact path constants so this script and
+# agent-sync.sh agree byte-for-byte on every manifest / stamp location. Path
+# updates only need to happen in one file going forward.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/paths.sh"
+
 PASS=0
 FAIL=0
 WARN=0
@@ -327,7 +332,7 @@ fi
 echo ""
 echo "[7/$TOTAL_CHECKS] Skills deployment validation"
 
-SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
+# SKILLS_MANIFEST is defined globally in lib/paths.sh.
 SKILLS_SRC="$RULES_HOME/skills"
 HAS_SOURCE_SKILLS=false
 if [ -d "$SKILLS_SRC" ] && [ "$(ls -d "$SKILLS_SRC"/*/ 2>/dev/null)" ]; then
@@ -467,14 +472,14 @@ fi
 echo ""
 echo "[11/$TOTAL_CHECKS] CC skills deployment validation"
 
-CC_SKILLS_MF="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
+# CC_SKILLS_MANIFEST is defined globally in lib/paths.sh.
 CC_HAS_SOURCE_SKILLS=false
 if [ -d "$RULES_HOME/skills" ] && [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
     CC_HAS_SOURCE_SKILLS=true
 fi
 
 if $CC_HAS_SOURCE_SKILLS; then
-    if [ -f "$CC_SKILLS_MF" ]; then
+    if [ -f "$CC_SKILLS_MANIFEST" ]; then
         CC_SKILLS_OK=true
         CC_SKILLS_CHECKED=0
         while IFS= read -r cc_skill_name; do
@@ -487,7 +492,7 @@ if $CC_HAS_SOURCE_SKILLS; then
                 fail "CC skill '$cc_skill_name' listed in manifest but missing or empty"
                 CC_SKILLS_OK=false
             fi
-        done < "$CC_SKILLS_MF"
+        done < "$CC_SKILLS_MANIFEST"
         if [ "$CC_SKILLS_CHECKED" -eq 0 ]; then
             fail "CC skills manifest exists but is empty. Run agent-sync."
         elif $CC_SKILLS_OK; then
@@ -534,11 +539,13 @@ else
     fi
 fi
 
-# Check CC skills consistency with Cursor skills
-CURSOR_SKILLS_MF="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
-if [ -f "$CC_SKILLS_MF" ] && [ -f "$CURSOR_SKILLS_MF" ]; then
-    CURSOR_SKILL_SET=$(sort "$CURSOR_SKILLS_MF" | tr '\n' ',')
-    CC_SKILL_SET=$(sort "$CC_SKILLS_MF" | tr '\n' ',')
+# Check CC skills consistency with Cursor skills.
+# Manifest paths come from lib/paths.sh (SKILLS_MANIFEST = Cursor's manifest;
+# CC_SKILLS_MANIFEST = CC's). The `[ -f ... ]` guard handles the case where
+# either deployment hasn't run yet.
+if [ -f "$CC_SKILLS_MANIFEST" ] && [ -f "$SKILLS_MANIFEST" ]; then
+    CURSOR_SKILL_SET=$(sort "$SKILLS_MANIFEST" | tr '\n' ',')
+    CC_SKILL_SET=$(sort "$CC_SKILLS_MANIFEST" | tr '\n' ',')
     if [ "$CURSOR_SKILL_SET" = "$CC_SKILL_SET" ]; then
         pass "CC and Cursor skill sets match"
     else
@@ -605,14 +612,14 @@ fi
 echo ""
 echo "[$((CODEX_BASE + 2))/$TOTAL_CHECKS] Codex skills deployment validation"
 
-CODEX_SKILLS_MF="$PROJECT_DIR/.agents/skills/.agent-sync-codex-skills-manifest"
+# CODEX_SKILLS_MANIFEST is defined globally in lib/paths.sh.
 CODEX_HAS_SOURCE_SKILLS=false
 if [ -d "$RULES_HOME/skills" ] && [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
     CODEX_HAS_SOURCE_SKILLS=true
 fi
 
 if $CODEX_HAS_SOURCE_SKILLS; then
-    if [ -f "$CODEX_SKILLS_MF" ]; then
+    if [ -f "$CODEX_SKILLS_MANIFEST" ]; then
         CODEX_SKILLS_OK=true
         CODEX_SKILLS_CHECKED=0
         while IFS= read -r codex_skill_name; do
@@ -625,7 +632,7 @@ if $CODEX_HAS_SOURCE_SKILLS; then
                 fail "Codex skill '$codex_skill_name' listed in manifest but missing or empty"
                 CODEX_SKILLS_OK=false
             fi
-        done < "$CODEX_SKILLS_MF"
+        done < "$CODEX_SKILLS_MANIFEST"
         if [ "$CODEX_SKILLS_CHECKED" -eq 0 ]; then
             fail "Codex skills manifest exists but is empty. Run agent-sync."
         elif $CODEX_SKILLS_OK; then
@@ -643,25 +650,22 @@ fi
 echo ""
 echo "[$((CODEX_BASE + 3))/$TOTAL_CHECKS] Codex/CC/Cursor skills consistency"
 
-# Re-declare the peer manifest paths locally — CC_SKILLS_MF / CURSOR_SKILLS_MF
-# are only set inside the CC_MODE != off block above, but this Codex block can
-# run independently (e.g. CC_MODE=off + Codex=native), so we need our own copy
-# to avoid unbound-variable failures under set -u.
-CODEX_CHECK_CURSOR_SKILLS_MF="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
-CODEX_CHECK_CC_SKILLS_MF="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
-if [ -f "$CODEX_SKILLS_MF" ] && [ -f "$CODEX_CHECK_CURSOR_SKILLS_MF" ]; then
-    CODEX_CHECK_CURSOR_SET=$(sort "$CODEX_CHECK_CURSOR_SKILLS_MF" | tr '\n' ',')
-    CODEX_CHECK_CODEX_SET=$(sort "$CODEX_SKILLS_MF" | tr '\n' ',')
-    if [ "$CODEX_CHECK_CURSOR_SET" = "$CODEX_CHECK_CODEX_SET" ]; then
+# Peer manifest paths come from lib/paths.sh — they're always defined,
+# even when CC_MODE=off, so the [ -f ... ] guard alone is sufficient and
+# the previous defensive local re-declaration is no longer needed.
+if [ -f "$CODEX_SKILLS_MANIFEST" ] && [ -f "$SKILLS_MANIFEST" ]; then
+    CODEX_VS_CURSOR_CURSOR_SET=$(sort "$SKILLS_MANIFEST" | tr '\n' ',')
+    CODEX_VS_CURSOR_CODEX_SET=$(sort "$CODEX_SKILLS_MANIFEST" | tr '\n' ',')
+    if [ "$CODEX_VS_CURSOR_CURSOR_SET" = "$CODEX_VS_CURSOR_CODEX_SET" ]; then
         pass "Codex and Cursor skill sets match"
     else
         warn "Codex and Cursor skill sets differ — check agent-sync output"
     fi
 fi
-if [ -f "$CODEX_SKILLS_MF" ] && [ -f "$CODEX_CHECK_CC_SKILLS_MF" ]; then
-    CODEX_CHECK_CC_SET=$(sort "$CODEX_CHECK_CC_SKILLS_MF" | tr '\n' ',')
-    CODEX_CHECK_CODEX_SET_FOR_CC=$(sort "$CODEX_SKILLS_MF" | tr '\n' ',')
-    if [ "$CODEX_CHECK_CC_SET" = "$CODEX_CHECK_CODEX_SET_FOR_CC" ]; then
+if [ -f "$CODEX_SKILLS_MANIFEST" ] && [ -f "$CC_SKILLS_MANIFEST" ]; then
+    CODEX_VS_CC_CC_SET=$(sort "$CC_SKILLS_MANIFEST" | tr '\n' ',')
+    CODEX_VS_CC_CODEX_SET=$(sort "$CODEX_SKILLS_MANIFEST" | tr '\n' ',')
+    if [ "$CODEX_VS_CC_CC_SET" = "$CODEX_VS_CC_CODEX_SET" ]; then
         pass "Codex and CC skill sets match"
     else
         warn "Codex and CC skill sets differ — check agent-sync output"
@@ -725,14 +729,14 @@ fi
 echo ""
 echo "[$((OPENCODE_BASE + 2))/$TOTAL_CHECKS] OpenCode skills deployment validation"
 
-OPENCODE_SKILLS_MF="$PROJECT_DIR/.opencode/skills/.agent-sync-skills-manifest"
+# OPENCODE_SKILLS_MANIFEST is defined globally in lib/paths.sh.
 OPENCODE_HAS_SOURCE_SKILLS=false
 if [ -d "$RULES_HOME/skills" ] && [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ]; then
     OPENCODE_HAS_SOURCE_SKILLS=true
 fi
 
 if $OPENCODE_HAS_SOURCE_SKILLS; then
-    if [ -f "$OPENCODE_SKILLS_MF" ]; then
+    if [ -f "$OPENCODE_SKILLS_MANIFEST" ]; then
         OPENCODE_SKILLS_OK=true
         OPENCODE_SKILLS_CHECKED=0
         while IFS= read -r opencode_skill_name; do
@@ -745,7 +749,7 @@ if $OPENCODE_HAS_SOURCE_SKILLS; then
                 fail "OpenCode skill '$opencode_skill_name' listed in manifest but missing or empty"
                 OPENCODE_SKILLS_OK=false
             fi
-        done < "$OPENCODE_SKILLS_MF"
+        done < "$OPENCODE_SKILLS_MANIFEST"
         if [ "$OPENCODE_SKILLS_CHECKED" -eq 0 ]; then
             fail "OpenCode skills manifest exists but is empty. Run agent-sync."
         elif $OPENCODE_SKILLS_OK; then
@@ -763,24 +767,23 @@ fi
 echo ""
 echo "[$((OPENCODE_BASE + 3))/$TOTAL_CHECKS] OpenCode/CC/Cursor skills consistency"
 
-# Same defensive re-declaration pattern used in the Codex block: this
-# sub-block can run with CC_MODE=off + OpenCode=native, so CURSOR_SKILLS_MF
-# / CC_SKILLS_MF may be unset under set -u.
-OPENCODE_CHECK_CURSOR_SKILLS_MF="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
-OPENCODE_CHECK_CC_SKILLS_MF="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
-if [ -f "$OPENCODE_SKILLS_MF" ] && [ -f "$OPENCODE_CHECK_CURSOR_SKILLS_MF" ]; then
-    OPENCODE_CHECK_CURSOR_SET=$(sort "$OPENCODE_CHECK_CURSOR_SKILLS_MF" | tr '\n' ',')
-    OPENCODE_CHECK_OPENCODE_SET=$(sort "$OPENCODE_SKILLS_MF" | tr '\n' ',')
-    if [ "$OPENCODE_CHECK_CURSOR_SET" = "$OPENCODE_CHECK_OPENCODE_SET" ]; then
+# Peer manifest paths come from lib/paths.sh — symmetrical with the Codex
+# block. When CC_MODE=off + OpenCode=native, CC_SKILLS_MANIFEST is still
+# defined (the manifest *file* just won't exist), so the [ -f ... ] guard
+# handles the comparison correctly.
+if [ -f "$OPENCODE_SKILLS_MANIFEST" ] && [ -f "$SKILLS_MANIFEST" ]; then
+    OPENCODE_VS_CURSOR_CURSOR_SET=$(sort "$SKILLS_MANIFEST" | tr '\n' ',')
+    OPENCODE_VS_CURSOR_OC_SET=$(sort "$OPENCODE_SKILLS_MANIFEST" | tr '\n' ',')
+    if [ "$OPENCODE_VS_CURSOR_CURSOR_SET" = "$OPENCODE_VS_CURSOR_OC_SET" ]; then
         pass "OpenCode and Cursor skill sets match"
     else
         warn "OpenCode and Cursor skill sets differ — check agent-sync output"
     fi
 fi
-if [ -f "$OPENCODE_SKILLS_MF" ] && [ -f "$OPENCODE_CHECK_CC_SKILLS_MF" ]; then
-    OPENCODE_CHECK_CC_SET=$(sort "$OPENCODE_CHECK_CC_SKILLS_MF" | tr '\n' ',')
-    OPENCODE_CHECK_OPENCODE_SET_FOR_CC=$(sort "$OPENCODE_SKILLS_MF" | tr '\n' ',')
-    if [ "$OPENCODE_CHECK_CC_SET" = "$OPENCODE_CHECK_OPENCODE_SET_FOR_CC" ]; then
+if [ -f "$OPENCODE_SKILLS_MANIFEST" ] && [ -f "$CC_SKILLS_MANIFEST" ]; then
+    OPENCODE_VS_CC_CC_SET=$(sort "$CC_SKILLS_MANIFEST" | tr '\n' ',')
+    OPENCODE_VS_CC_OC_SET=$(sort "$OPENCODE_SKILLS_MANIFEST" | tr '\n' ',')
+    if [ "$OPENCODE_VS_CC_CC_SET" = "$OPENCODE_VS_CC_OC_SET" ]; then
         pass "OpenCode and CC skill sets match"
     else
         warn "OpenCode and CC skill sets differ — check agent-sync output"

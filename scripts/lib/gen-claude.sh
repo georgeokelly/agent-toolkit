@@ -8,8 +8,12 @@
 # Generate CC-native .claude/rules/*.md files.
 # Rule categories:
 #   A (always-on): core rules — no frontmatter in CC (always loaded)
-#   B (path-scoped): packs with globs — CC uses globs: from rule_templates/cc_frontmatter/
-#   C (description-only): packs with only description — always-on in CC
+#   B (path-scoped): packs — CC uses globs: from rule_templates/cc_frontmatter/
+#   C (always-on fallback): packs without a matching cc_frontmatter yaml are
+#       written without frontmatter, which CC treats as always-on. Every shipped
+#       pack now carries a yaml (pybind11/git use broad source-code globs as the
+#       closest CC-side approximation of Cursor's Agent-Requested mode), so this
+#       branch is purely the safety net for a newly added pack whose yaml lags.
 generate_cc_rules() {
     mkdir -p "$PROJECT_DIR/.claude/rules"
 

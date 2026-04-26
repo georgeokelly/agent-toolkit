@@ -1,0 +1,1 @@
+globs: "**/*.cpp,**/*.h,**/*.hpp,**/*.cc,**/setup.py,**/pyproject.toml,**/CMakeLists.txt"

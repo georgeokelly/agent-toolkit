@@ -69,9 +69,11 @@ agent-toolkit/                   ← This repo / 本仓库 (deployed to ~/.confi
 │       │   ├── cpp.yaml             # globs: "**/*.cpp,**/*.h,**/*.hpp,**/*.cc"
 │       │   ├── cuda.yaml            # globs: "**/*.cu,**/*.cuh,**/*.h,**/*.hpp"
 │       │   ├── rust.yaml            # globs: "**/*.rs,**/Cargo.toml"
+│       │   ├── pybind11.yaml        # globs: C++ binding sources + Python build files
 │       │   ├── shell.yaml           # globs: "**/*.sh,**/*.bash,**/*.zsh"
 │       │   ├── swift.yaml           # globs: "**/*.swift"
-│       │   └── markdown.yaml        # globs: "**/*.md"
+│       │   ├── markdown.yaml        # globs: "**/*.md"
+│       │   └── git.yaml             # globs: source-code files + .md (CC has no Agent-Requested mode)
 │       └── opencode-rule-template.json  # Baseline for project-root opencode.json (HIST-006) / 项目根 opencode.json 模板
 │
 ├── temp/                        ← Ephemeral verification artifacts / 临时验证产物
@@ -100,8 +102,19 @@ agent-toolkit/                   ← This repo / 本仓库 (deployed to ~/.confi
 │   ├── agent-sync.sh            # Sync rules to project / 同步规则到项目
 │   ├── agent-check.sh           # Validate generated files / 验证生成文件
 │   ├── agent-test.sh            # E2E tests for sync/check pipeline / 端到端测试
-│   └── async-agent-rules.sh     # Pull latest rules with unlock/relock flow / 拉取最新规则（解锁-重锁流程）
+│   ├── async-agent-toolkit.sh     # Pull latest rules with unlock/relock flow / 拉取最新规则（解锁-重锁流程）
+│   └── lib/                     # Shared modules sourced by agent-sync/agent-check / agent-sync 与 agent-check 共享的模块
+│       ├── paths.sh             # Per-project artifact path constants / 项目级路径常量集中定义
+│       ├── common.sh            # Output helpers + skill/subagent prefixing / 输出与前缀工具
+│       ├── resolve.sh           # Mode/pack/skill-prefix resolution + staleness hash / 模式与陈旧度计算
+│       ├── sync.sh              # cleanup_remnants + sub-repo overlay sync / 残留清理与 sub-repo overlay
+│       ├── clean.sh             # do_clean (full per-tool teardown) / 全量清理
+│       ├── gen-cursor.sh        # Cursor .mdc + skills + worktrees.json / Cursor 产物生成
+│       ├── gen-claude.sh        # CC .claude/rules + skills + subagents / CC 产物生成
+│       ├── gen-codex.sh         # Codex AGENTS.override.md + .codex/config.toml / Codex 产物生成
+│       └── gen-opencode.sh      # OpenCode opencode.json + .opencode/ / OpenCode 产物生成
 │
+├── install.sh                   ← One-line bootstrap (clone + lock + alias) / 一键引导安装（clone + 加锁 + 写 alias）
 ├── LICENSE
 └── README.md                    # This file / 本文件
 ```
@@ -116,10 +129,30 @@ The rule system is deployed as a single git clone per machine. All source files 
 
 每台机器上只需要一个 git clone。所有源文件只读 — 修改规则应该在仓库中 commit，然后 pull 更新。
 
+**Option A — One-line install (recommended) / 一键安装（推荐）**:
+
+```bash
+# Clones the repo, applies read-only locks, and writes aliases to your shell rc.
+# Idempotent: re-running re-applies locks and refreshes aliases without duplicating.
+# 克隆仓库、加只读锁、把 alias 写入 shell rc。可重复执行：再跑一次只刷新锁与别名，不会重复写。
+bash <(curl -fsSL https://raw.githubusercontent.com/georgeokelly/agent-toolkit/main/install.sh)
+
+# With flags (custom location / skip alias / non-default rc file)
+# 带参数（自定义位置 / 跳过 alias / 指定 rc 文件）
+bash <(curl -fsSL https://raw.githubusercontent.com/georgeokelly/agent-toolkit/main/install.sh) \
+    --dest ~/code/agent-toolkit --no-alias
+
+# Already cloned the repo manually? Run install.sh from the cloned tree.
+# 已经手工 clone 过？直接跑 clone 出来的 install.sh：
+bash ~/.config/agent-toolkit/install.sh --help
+```
+
+**Option B — Manual (equivalent, transparent) / 手工（与 install.sh 等效，可逐步审阅）**:
+
 ```bash
 # 1. Clone the rules repo (one-time, per machine)
 #    克隆规则仓库（每台机器一次）
-git clone https://github.com/georgeokelly/agent-toolkit.git ~/.config/agent-toolkit
+git clone --recurse-submodules https://github.com/georgeokelly/agent-toolkit.git ~/.config/agent-toolkit
 
 # 2. Make source files read-only (prevent accidental edits)
 #    将源文件设为只读（防止意外修改）
@@ -129,12 +162,18 @@ chmod -R a-w ~/.config/agent-toolkit/{core,packs,templates}
 #    添加 shell 别名
 echo 'alias agent-sync="~/.config/agent-toolkit/scripts/agent-sync.sh"' >> ~/.zshrc
 echo 'alias agent-check="~/.config/agent-toolkit/scripts/agent-check.sh"' >> ~/.zshrc
+echo 'alias async-agent-toolkit="bash ~/.config/agent-toolkit/scripts/async-agent-toolkit.sh"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
 To update rules on this machine / 在本机更新规则:
 
 ```bash
+# Recommended: async-agent-toolkit.sh handles the unlock/pull/relock dance for you
+# 推荐：async-agent-toolkit.sh 自动 unlock-pull-relock
+async-agent-toolkit
+
+# Manual equivalent / 手工等价
 chmod -R u+w ~/.config/agent-toolkit/{core,packs,templates}  # temporarily unlock
 cd ~/.config/agent-toolkit && git pull
 chmod -R a-w ~/.config/agent-toolkit/{core,packs,templates}   # re-lock
