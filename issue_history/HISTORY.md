@@ -47,6 +47,7 @@ Copy the block below when creating a new entry.
 
 | ID | Title / 标题 | Status / 状态 | Date / 日期 |
 |----|-------------|--------------|------------|
+| HIST-010 | Agent output directory path collision 非致命化 | Closed | 2026-04-27 |
 | HIST-009 | OpenCode config ownership 改为 external stamp | Closed | 2026-04-27 |
 | HIST-008 | 后台同步脚本改名（async-agent-rules → async-agent-toolkit） | Closed | 2026-04-26 |
 | HIST-007 | Codex 入口 AGENTS.override.md 化 + sub-repo 双注入修复 | Closed | 2026-04-25 |
@@ -61,6 +62,46 @@ Copy the block below when creating a new entry.
 ---
 
 ## Records / 记录
+
+### HIST-010: Agent output directory path collision 非致命化
+
+- **Status / 状态**: Closed
+- **Date / 日期**: 2026-04-27
+- **Scope / 范围**: `scripts/lib/common.sh`, `scripts/lib/gen-codex.sh`, `scripts/lib/gen-opencode.sh`, `scripts/lib/gen-cursor.sh`, `scripts/lib/gen-claude.sh`, `scripts/agent-test.sh`, `issue_history/HISTORY.md`
+
+#### 背景 / Background
+
+在一个目标项目中，`gl-agent-sync .` 运行到 Codex native config 阶段时报错：
+
+```text
+mkdir: 无法创建目录 “.../.codex”: File exists
+```
+
+根因是目标项目已有普通文件 `.codex`，而 `generate_codex_config()` 直接执行 `mkdir -p "$PROJECT_DIR/.codex"`。在 `set -e` 下，这种路径冲突会中断整个 sync，导致后续 OpenCode / cleanup / hash store 等步骤都无法完成。
+
+#### 设计 / Design
+
+目录创建应当是非破坏性的：
+
+- 如果目标路径已存在且不是目录，不删除、不覆盖，打印明确 `SKIP` warning。
+- 对应 artifact 生成跳过，但整个 `agent-sync` 继续执行其他工具输出。
+- staleness check 仍会在后续运行中把缺失的 managed artifact 视为未收敛，用户修复路径后可重新 sync。
+
+#### 实现 / Implementation
+
+| 文件 | 变更 |
+|------|------|
+| `scripts/lib/common.sh` | 新增 `_ensure_dir()`，统一处理 "path exists but is not a directory" 和 parent path collision |
+| `scripts/lib/gen-codex.sh` | Codex `.codex` / `.codex/config.toml` 路径冲突时非破坏性 skip |
+| `scripts/lib/gen-opencode.sh` | OpenCode `.opencode` / `opencode.json` 路径冲突时非破坏性 skip |
+| `scripts/lib/gen-cursor.sh` / `scripts/lib/gen-claude.sh` | Cursor / CC 规则与 worktrees 输出改用 `_ensure_dir()` |
+| `scripts/agent-test.sh` | 新增 T26，覆盖 `.codex` 普通文件存在时 full sync exit 0、保留用户文件并继续生成其他输出 |
+
+#### Limitations / 局限性
+
+- 这不是自动修复用户路径冲突；脚本只保证不破坏用户文件且不中断全局 sync。用户仍需移动或删除冲突路径，才能启用对应 tool 的 managed artifact。
+
+---
 
 ### HIST-009: OpenCode config ownership 改为 external stamp
 

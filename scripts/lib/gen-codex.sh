@@ -10,7 +10,13 @@
 # a Codex-exclusive entry point with zero Cursor overlap.
 
 generate_codex_config() {
-    mkdir -p "$PROJECT_DIR/.codex"
+    _ensure_dir "$PROJECT_DIR/.codex" "Codex config directory" || return 0
+
+    if [ -e "$PROJECT_DIR/.codex/config.toml" ] && [ ! -f "$PROJECT_DIR/.codex/config.toml" ]; then
+        _warn "  SKIP: .codex/config.toml exists and is not a regular file."
+        _warn "        Move or delete it, then rerun agent-sync."
+        return 0
+    fi
 
     if [ -f "$PROJECT_DIR/.codex/config.toml" ] && [ ! -f "$CODEX_CONFIG_STAMP" ]; then
         _warn "  SKIP: .codex/config.toml exists and is not managed by agent-sync."

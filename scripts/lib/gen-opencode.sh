@@ -29,6 +29,12 @@ generate_opencode_config() {
         return 0
     fi
 
+    if [ -e "$config" ] && [ ! -f "$config" ]; then
+        _warn "  SKIP: opencode.json exists and is not a regular file."
+        _warn "        Move or delete it, then rerun agent-sync."
+        return 0
+    fi
+
     if [ -f "$config" ] && [ ! -f "$OPENCODE_CONFIG_STAMP" ] \
         && ! grep -q "$OPENCODE_LEGACY_MARKER" "$config" 2>/dev/null; then
         _warn "  SKIP: opencode.json exists and is not managed by agent-sync."
@@ -36,7 +42,7 @@ generate_opencode_config() {
         return 0
     fi
 
-    mkdir -p "$PROJECT_DIR/.opencode"
+    _ensure_dir "$PROJECT_DIR/.opencode" "OpenCode config directory" || return 0
 
     # Assemble the instructions array based on the other tools' modes.
     # Cursor rules are always emitted by a full sync, so they are

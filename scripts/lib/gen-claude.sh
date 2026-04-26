@@ -15,7 +15,7 @@
 #       closest CC-side approximation of Cursor's Agent-Requested mode), so this
 #       branch is purely the safety net for a newly added pack whose yaml lags.
 generate_cc_rules() {
-    mkdir -p "$PROJECT_DIR/.claude/rules"
+    _ensure_dir "$PROJECT_DIR/.claude/rules" "CC rules directory" || return 0
 
     local cc_fm_dir="$RULES_HOME/templates/rule_templates/cc_frontmatter"
     local manifest_new="${CC_RULES_MANIFEST}.new"

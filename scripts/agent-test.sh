@@ -809,6 +809,27 @@ assert "T25e: legacy sub-repo AGENTS.md swept"        test ! -f "$P25E/libs/core
 assert "T25e: new root AGENTS.override.md produced"   test -f "$P25E/AGENTS.override.md"
 assert "T25e: new sub-repo AGENTS.override.md"        test -f "$P25E/libs/core/AGENTS.override.md"
 
+# ===== T26: Blocking path collision does not abort full sync =====
+# A user project may already contain a file named `.codex`. `mkdir -p .codex`
+# used to abort the whole sync under set -e. The expected behavior is a
+# non-destructive skip for Codex native config while the rest of the sync
+# continues.
+
+echo ""
+echo "=== T26: .codex file collision is non-fatal ==="
+P26="$(new_project)"
+write_overlay "$P26"
+printf 'user-owned codex placeholder\n' > "$P26/.codex"
+T26_EXIT=0
+T26_OUT=$("$AGENT_SYNC" "$P26" 2>&1) || T26_EXIT=$?
+
+assert "T26: sync exits 0"                         test "$T26_EXIT" -eq 0
+assert_output_match "T26: collision warning printed" "Codex config directory target '.codex' exists but is not a directory" "$T26_OUT"
+assert "T26: user .codex file preserved"           grep -q 'user-owned codex placeholder' "$P26/.codex"
+assert "T26: Codex config not written"             test ! -e "$P26/.codex/config.toml"
+assert "T26: AGENTS.override.md still produced"    test -f "$P26/AGENTS.override.md"
+assert "T26: OpenCode config still produced"       test -f "$P26/opencode.json"
+
 # ===== Summary =====
 
 echo ""

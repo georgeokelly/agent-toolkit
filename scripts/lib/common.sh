@@ -11,6 +11,23 @@ _err()  { printf '%b%s%b\n' "$_R" "$*" "$_N"; }
 _warn() { printf '%b%s%b\n' "$_Y" "$*" "$_N"; }
 _ok()   { printf '%b%s%b\n' "$_G" "$*" "$_N"; }
 
+_ensure_dir() {
+    local dir="$1" label="${2:-directory}" shown="$1"
+    shown="${shown#"$PROJECT_DIR"/}"
+
+    if [ -e "$dir" ] && [ ! -d "$dir" ]; then
+        _warn "  SKIP: $label target '$shown' exists but is not a directory."
+        _warn "        Move or delete it, then rerun agent-sync."
+        return 1
+    fi
+
+    if ! mkdir -p "$dir" 2>/dev/null; then
+        _warn "  SKIP: cannot create $label target '$shown'."
+        _warn "        A parent path may exist as a file; move or delete it, then rerun agent-sync."
+        return 1
+    fi
+}
+
 # Surface the perl/python3-missing fallback only once per agent-sync run,
 # regardless of how many sub-repo overlays trigger strip_html_comments.
 # Initialized here so set -u doesn't trip the first read in the function.
@@ -107,7 +124,7 @@ deploy_artifacts() {
 
     local count=0
     local manifest_new="${manifest_file}.new"
-    mkdir -p "$target_dir"
+    _ensure_dir "$target_dir" "$label directory" || return 0
     : > "$manifest_new"
 
     local item item_name item_target_name item_target
@@ -308,7 +325,7 @@ deploy_subagent_files() {
 
     local count=0
     local manifest_new="${manifest_file}.new"
-    mkdir -p "$target_dir"
+    _ensure_dir "$target_dir" "$label directory" || return 0
     : > "$manifest_new"
 
     local file file_name ext bare target_name target

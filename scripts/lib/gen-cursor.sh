@@ -2,7 +2,7 @@
 # Sourced by agent-sync.sh. Do not execute directly.
 
 generate_cursor() {
-    mkdir -p "$PROJECT_DIR/.cursor/rules"
+    _ensure_dir "$PROJECT_DIR/.cursor/rules" "Cursor rules directory" || return 0
     # One-shot orphan cleanup for HIST-003 (commands/review decommission):
     # core/30-review-criteria.md is gone, but pre-refactor deployments still
     # carry the generated .mdc. This file is 100% agent-sync-managed (not in
@@ -74,11 +74,17 @@ WORKTREES_STAMP="$PROJECT_DIR/.cursor/.worktrees-agent-sync"
 
 generate_worktrees() {
     [ -f "$WORKTREES_TEMPLATE" ] || return 0
-    mkdir -p "$PROJECT_DIR/.cursor"
+    _ensure_dir "$PROJECT_DIR/.cursor" "Cursor config directory" || return 0
 
     if [ -f "$WORKTREES_TARGET" ] && [ ! -f "$WORKTREES_STAMP" ]; then
         _warn "  SKIP: .cursor/worktrees.json exists and is not managed by agent-sync."
         _warn "        To let agent-sync manage it, delete it and re-run."
+        return 0
+    fi
+
+    if [ -e "$WORKTREES_TARGET" ] && [ ! -f "$WORKTREES_TARGET" ]; then
+        _warn "  SKIP: .cursor/worktrees.json exists and is not a regular file."
+        _warn "        Move or delete it, then rerun agent-sync."
         return 0
     fi
 
