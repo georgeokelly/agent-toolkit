@@ -17,14 +17,14 @@ USAGE
     agent-sync codex-native [project-dir]     Only generate Codex native files (.codex/)
     agent-sync cc [project-dir]               Only generate all CC native files (.claude/)
     agent-sync cc-rules [project-dir]         Only generate .claude/rules/*.md
-    agent-sync cc-skills [project-dir]        Only sync skills to .claude/skills/
-    agent-sync skills [project-dir]           Only sync skills to .cursor/skills/
+    agent-sync cc-skills [project-dir]        Only sync skills to user-global Claude path
+    agent-sync skills [project-dir]           Only sync skills to user-global Cursor path
     agent-sync opencode [project-dir]         Only generate OpenCode files (opencode.json + .opencode/)
     agent-sync opencode-config [project-dir]  Only generate opencode.json
-    agent-sync opencode-skills [project-dir]  Only sync skills to .opencode/skills/
+    agent-sync opencode-skills [project-dir]  Only sync skills to user-global OpenCode path
     agent-sync opencode-subagents [dir]       Only sync subagents to .opencode/agent/
     agent-sync subagents [project-dir]        Only sync subagents (all tools, skeleton)
-    agent-sync clean [project-dir]            Remove all generated files
+    agent-sync clean [project-dir]            Remove project-scoped generated files
     agent-sync -h | --help                    Show this help message
 
 ARGUMENTS
@@ -37,26 +37,26 @@ SUBCOMMANDS
     (default)   Full sync: generates Cursor .mdc files, .claude/rules/*.md,
                 root AGENTS.override.md (if Codex enabled — HIST-007),
                 .codex/config.toml (if Codex native), opencode.json +
-                .opencode/* (if OpenCode native), skills and subagents for
-                all tools, deploys .cursor/worktrees.json (if template
-                exists), applies project overlays, handles sub-repo
-                overlays, and cleans up root-level remnants. Skips if
-                already up to date.
+                .opencode/* (if OpenCode native), user-global skills and
+                project-scoped subagents for all tools, deploys
+                .cursor/worktrees.json (if template exists), applies project
+                overlays, handles sub-repo overlays, and cleans up root-level
+                remnants. Skips if already up to date.
 
     codex               Only generate root AGENTS.override.md for Codex.
-    codex-native        Only generate all Codex native files (.codex/config.toml, skills).
-    cc                  Only generate all CC native files (.claude/rules/, skills/).
+    codex-native        Only generate Codex native files (.codex/config.toml, global skills).
+    cc                  Only generate CC native files (.claude/rules/, global skills).
     cc-rules            Only generate .claude/rules/*.md for Claude Code.
-    cc-skills           Only sync skills to .claude/skills/.
-    skills              Only sync skills to .cursor/skills/.
-    opencode            Only generate all OpenCode files (config + skills + subagents).
+    cc-skills           Only sync skills to the user-global Claude skills path.
+    skills              Only sync skills to the user-global Cursor skills path.
+    opencode            Only generate OpenCode files (config + global skills + subagents).
     opencode-config     Only generate opencode.json (stamp-gated, HIST-009).
-    opencode-skills     Only sync skills to .opencode/skills/.
+    opencode-skills     Only sync skills to the user-global OpenCode skills path.
     opencode-subagents  Only sync OpenCode subagents to .opencode/agent/ (skeleton).
     subagents           Run all per-tool subagent deploys (.cursor/agents/,
                         .claude/agents/, .agents/agents/, .opencode/agent/);
                         each is a no-op until subagents/<tool>/ has content.
-    clean               Remove all generated files.
+    clean               Remove project-scoped generated files; user-global skills remain.
 
 NOTE
     The legacy 'claude' subcommand and CC Mode 'dual' were removed in HIST-004
@@ -77,7 +77,7 @@ EXAMPLES
     agent-sync codex .          # Regenerate only AGENTS.override.md
     agent-sync cc .             # Regenerate all CC native files
     agent-sync opencode .       # Regenerate all OpenCode native files
-    agent-sync clean            # Remove all generated files
+    agent-sync clean            # Remove project-scoped generated files
 EOF
     exit 0
 }
@@ -166,7 +166,8 @@ case "$SUBCOMMAND" in
         validate_rules_repo
         resolve_packs
         resolve_skill_prefix
-        echo "Generating Codex native files in $PROJECT_DIR/.codex/ ..."
+        cleanup_legacy_workspace_skills
+        echo "Generating Codex native files in $PROJECT_DIR/.codex/ and global skill dirs ..."
         generate_codex
         generate_codex_config
         generate_codex_skills
@@ -178,7 +179,8 @@ case "$SUBCOMMAND" in
     skills)
         validate_rules_repo
         resolve_skill_prefix
-        echo "Syncing skills to $PROJECT_DIR/.cursor/skills/ ..."
+        cleanup_legacy_workspace_skills
+        echo "Syncing skills to $GLOBAL_CURSOR_SKILLS_DIR ..."
         generate_skills
         _ok "Done."
         ;;
@@ -191,7 +193,8 @@ case "$SUBCOMMAND" in
         # Decommissioned subsystems never come back, so all cc* subcommands mirror
         # the full-sync behavior (see reconcile_mode_outputs in sync.sh).
         cleanup_legacy_cc_commands
-        echo "Generating all CC native files in $PROJECT_DIR/.claude/ ..."
+        cleanup_legacy_workspace_skills
+        echo "Generating CC native files in $PROJECT_DIR/.claude/ and $GLOBAL_CC_SKILLS_DIR ..."
         generate_cc_rules
         generate_cc_skills
         # HIST-006: CC-scoped regen keeps subagents in sync with rules/skills.
@@ -211,7 +214,8 @@ case "$SUBCOMMAND" in
         validate_rules_repo
         resolve_skill_prefix
         cleanup_legacy_cc_commands
-        echo "Syncing skills to $PROJECT_DIR/.claude/skills/ ..."
+        cleanup_legacy_workspace_skills
+        echo "Syncing skills to $GLOBAL_CC_SKILLS_DIR ..."
         generate_cc_skills
         _ok "Done."
         ;;
@@ -229,7 +233,8 @@ case "$SUBCOMMAND" in
             _warn "Set '**OpenCode Mode**: native' in .agent-local.md to enable."
             exit 0
         fi
-        echo "Generating OpenCode files in $PROJECT_DIR (opencode.json + .opencode/) ..."
+        cleanup_legacy_workspace_skills
+        echo "Generating OpenCode files in $PROJECT_DIR plus $GLOBAL_OPENCODE_SKILLS_DIR ..."
         generate_opencode_config
         generate_opencode_skills
         generate_opencode_subagents
@@ -248,7 +253,8 @@ case "$SUBCOMMAND" in
     opencode-skills)
         validate_rules_repo
         resolve_skill_prefix
-        echo "Syncing skills to $PROJECT_DIR/.opencode/skills/ ..."
+        cleanup_legacy_workspace_skills
+        echo "Syncing skills to $GLOBAL_OPENCODE_SKILLS_DIR ..."
         generate_opencode_skills
         _ok "Done."
         ;;
@@ -305,7 +311,7 @@ case "$SUBCOMMAND" in
             generate_codex_subagents
         fi
         # HIST-006/HIST-009: OpenCode native outputs (stamp-gated opencode.json +
-        # .opencode/skills + .opencode/agent). Off mode is handled by
+        # user-global skills + .opencode/agent). Off mode is handled by
         # reconcile_mode_outputs earlier in this block.
         if [ "$OPENCODE_MODE" = "native" ]; then
             generate_opencode_config

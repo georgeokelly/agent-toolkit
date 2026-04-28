@@ -44,18 +44,49 @@ cleanup_legacy_cc_commands() {
     fi
 }
 
+# Remove pre-global-strategy workspace skill deployments. New skill deploys are
+# user-global, so these manifests are migration-only and remain project-scoped
+# to avoid touching user-authored skill directories that never had an
+# agent-sync manifest.
+cleanup_legacy_workspace_skills() {
+    if [ -f "$WORKSPACE_SKILLS_MANIFEST" ]; then
+        clean_manifest "$WORKSPACE_SKILLS_MANIFEST" "$PROJECT_DIR/.cursor/skills" "dirs"
+        rmdir "$PROJECT_DIR/.cursor/skills" 2>/dev/null || true
+        echo "  Removed legacy workspace Cursor skills"
+    fi
+
+    if [ -f "$WORKSPACE_CC_SKILLS_MANIFEST" ]; then
+        clean_manifest "$WORKSPACE_CC_SKILLS_MANIFEST" "$PROJECT_DIR/.claude/skills" "dirs"
+        rmdir "$PROJECT_DIR/.claude/skills" 2>/dev/null || true
+        echo "  Removed legacy workspace CC skills"
+    fi
+
+    if [ -f "$WORKSPACE_CODEX_SKILLS_MANIFEST" ]; then
+        clean_manifest "$WORKSPACE_CODEX_SKILLS_MANIFEST" "$PROJECT_DIR/.agents/skills" "dirs"
+        rmdir "$PROJECT_DIR/.agents/skills" 2>/dev/null || true
+        echo "  Removed legacy workspace Codex skills"
+    fi
+
+    if [ -f "$WORKSPACE_OPENCODE_SKILLS_MANIFEST" ]; then
+        clean_manifest "$WORKSPACE_OPENCODE_SKILLS_MANIFEST" "$PROJECT_DIR/.opencode/skills" "dirs"
+        rmdir "$PROJECT_DIR/.opencode/skills" 2>/dev/null || true
+        echo "  Removed legacy workspace OpenCode skills"
+    fi
+}
+
 # Remove artifacts from modes that are now disabled (convergent sync).
 reconcile_mode_outputs() {
     # Always opportunistic: decommissioned subsystems never come back, so we
     # can clean their remnants regardless of CC_MODE.
     cleanup_legacy_cc_commands
+    cleanup_legacy_workspace_skills
 
     if [ "$CC_MODE" = "off" ]; then
-        if [ -f "$CC_RULES_MANIFEST" ] || [ -f "$CC_SKILLS_MANIFEST" ] || [ -f "$CC_SUBAGENTS_MANIFEST" ]; then
+        if [ -f "$CC_RULES_MANIFEST" ] || [ -f "$WORKSPACE_CC_SKILLS_MANIFEST" ] || [ -f "$CC_SUBAGENTS_MANIFEST" ]; then
             echo "  Reconciling CC Mode=off: removing .claude/ artifacts..."
             clean_manifest "$CC_RULES_MANIFEST" "$PROJECT_DIR/.claude/rules" "files"
             rmdir "$PROJECT_DIR/.claude/rules" 2>/dev/null || true
-            clean_manifest "$CC_SKILLS_MANIFEST" "$PROJECT_DIR/.claude/skills" "dirs"
+            clean_manifest "$WORKSPACE_CC_SKILLS_MANIFEST" "$PROJECT_DIR/.claude/skills" "dirs"
             rmdir "$PROJECT_DIR/.claude/skills" 2>/dev/null || true
             # HIST-006: CC subagents follow the same off-mode reconciliation.
             clean_manifest "$CC_SUBAGENTS_MANIFEST" "$PROJECT_DIR/.claude/agents" "files"
@@ -73,7 +104,7 @@ reconcile_mode_outputs() {
             rm -f "$PROJECT_DIR/.codex/config.toml" "$CODEX_CONFIG_STAMP"
             rmdir "$PROJECT_DIR/.codex" 2>/dev/null || true
         fi
-        clean_manifest "$CODEX_SKILLS_MANIFEST" "$PROJECT_DIR/.agents/skills" "dirs"
+        clean_manifest "$WORKSPACE_CODEX_SKILLS_MANIFEST" "$PROJECT_DIR/.agents/skills" "dirs"
         rmdir "$PROJECT_DIR/.agents/skills" 2>/dev/null || true
         # HIST-006: Codex subagent cleanup parity with the legacy branch.
         if [ -f "$CODEX_SUBAGENTS_MANIFEST" ]; then
@@ -88,7 +119,7 @@ reconcile_mode_outputs() {
             rm -f "$PROJECT_DIR/.codex/config.toml" "$CODEX_CONFIG_STAMP"
             rmdir "$PROJECT_DIR/.codex" 2>/dev/null || true
         fi
-        clean_manifest "$CODEX_SKILLS_MANIFEST" "$PROJECT_DIR/.agents/skills" "dirs"
+        clean_manifest "$WORKSPACE_CODEX_SKILLS_MANIFEST" "$PROJECT_DIR/.agents/skills" "dirs"
         rmdir "$PROJECT_DIR/.agents/skills" 2>/dev/null || true
         # HIST-006: Codex subagents live in .agents/agents/ (sibling of
         # .agents/skills/). Legacy mode drops every .agents/ artifact too.
@@ -115,9 +146,9 @@ reconcile_mode_outputs() {
             rm -f "$PROJECT_DIR/opencode.json" "$OPENCODE_CONFIG_STAMP"
             echo "  Reconciled OpenCode Mode=off: removed opencode.json"
         fi
-        if [ -f "$OPENCODE_SKILLS_MANIFEST" ] || [ -f "$OPENCODE_SUBAGENTS_MANIFEST" ]; then
+        if [ -f "$WORKSPACE_OPENCODE_SKILLS_MANIFEST" ] || [ -f "$OPENCODE_SUBAGENTS_MANIFEST" ]; then
             echo "  Reconciling OpenCode Mode=off: removing .opencode/ artifacts..."
-            clean_manifest "$OPENCODE_SKILLS_MANIFEST" "$PROJECT_DIR/.opencode/skills" "dirs"
+            clean_manifest "$WORKSPACE_OPENCODE_SKILLS_MANIFEST" "$PROJECT_DIR/.opencode/skills" "dirs"
             rmdir "$PROJECT_DIR/.opencode/skills" 2>/dev/null || true
             clean_manifest "$OPENCODE_SUBAGENTS_MANIFEST" "$PROJECT_DIR/.opencode/agent" "files"
             rmdir "$PROJECT_DIR/.opencode/agent" 2>/dev/null || true

@@ -5,14 +5,14 @@
 ## 安装
 
 ```bash
-# 通过 agent-sync 部署到目标项目（推荐）
+# 通过 agent-sync 部署到用户全局 Cursor skills 目录（推荐）
 agent-sync skills <project-dir>
 
 # 或手动复制到个人 skills 目录（所有项目可用）
 cp -r agent-memory ~/.cursor/skills/
 ```
 
-部署后 Cursor 自动发现 `SKILL.md` 并在匹配场景加载。
+部署后 Cursor 从用户全局 skills 目录发现 `SKILL.md` 并在匹配场景加载。
 
 ## 命令
 

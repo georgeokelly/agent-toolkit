@@ -123,7 +123,7 @@ resolve_codex_mode() {
 # --- OpenCode Mode resolution (HIST-006) ---
 # OpenCode integrates as a fourth native tool. Modes:
 #   off    — no opencode.json, no .opencode/ output
-#   native — opencode.json at project root + optional .opencode/skills/ +
+#   native — opencode.json at project root + user-global OpenCode skills +
 #            optional .opencode/agent/ (subagents). Default, because the
 #            generated opencode.json reuses existing .cursor/rules/ and
 #            .claude/rules/ paths — it is zero-cost on projects that don't
@@ -146,6 +146,49 @@ resolve_opencode_mode() {
 # --- Staleness check (full sync only) ---
 
 CURRENT_HASH=""
+
+source_skills_exist() {
+    local extras_dir
+
+    [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ] && return 0
+
+    if [ -d "$RULES_HOME/extras" ]; then
+        for extras_dir in "$RULES_HOME/extras"/*/; do
+            [ -d "$extras_dir/skills" ] || continue
+            [ "$(ls -d "$extras_dir/skills/"*/ 2>/dev/null)" ] && return 0
+        done
+    fi
+
+    return 1
+}
+
+skill_deploy_complete() {
+    local manifest="$1" target_dir="$2" prefix="${SKILL_PREFIX:-}"
+    local expected_skill expected_name extras_dir
+
+    [ -f "$manifest" ] || return 1
+
+    for expected_skill in "$RULES_HOME/skills"/*/; do
+        [ -d "$expected_skill" ] || continue
+        expected_name="${prefix}$(basename "$expected_skill")"
+        grep -qx "$expected_name" "$manifest" 2>/dev/null || return 1
+        [ -d "$target_dir/$expected_name" ] && [ "$(ls -A "$target_dir/$expected_name" 2>/dev/null)" ] || return 1
+    done
+
+    if [ -d "$RULES_HOME/extras" ]; then
+        for extras_dir in "$RULES_HOME/extras"/*/; do
+            [ -d "$extras_dir/skills" ] || continue
+            for expected_skill in "$extras_dir/skills"/*/; do
+                [ -d "$expected_skill" ] || continue
+                expected_name="${prefix}$(basename "$expected_skill")"
+                grep -qx "$expected_name" "$manifest" 2>/dev/null || return 1
+                [ -d "$target_dir/$expected_name" ] && [ "$(ls -A "$target_dir/$expected_name" 2>/dev/null)" ] || return 1
+            done
+        done
+    fi
+
+    return 0
+}
 
 check_staleness() {
     echo "Computing staleness hash ..."
@@ -175,37 +218,31 @@ check_staleness() {
     local stored_hash=""
     [ -f "$HASH_FILE" ] && stored_hash="$(cat "$HASH_FILE")"
 
-    local cursor_exists=false agents_exists=false
+    local cursor_exists=false agents_exists=false workspace_skills_clean=true
     local skills_ok=true
     [ -d "$PROJECT_DIR/.cursor/rules" ] && [ "$(ls -A "$PROJECT_DIR/.cursor/rules/" 2>/dev/null)" ] && cursor_exists=true
     # HIST-007: root entry switched from .agent-rules/AGENTS.md to
     # AGENTS.override.md. Codex's discovery picks AGENTS.override.md
     # ahead of AGENTS.md in the same directory.
     [ -f "$PROJECT_DIR/AGENTS.override.md" ] && agents_exists=true
+    if [ -f "$WORKSPACE_SKILLS_MANIFEST" ] || [ -f "$WORKSPACE_CC_SKILLS_MANIFEST" ] \
+        || [ -f "$WORKSPACE_CODEX_SKILLS_MANIFEST" ] || [ -f "$WORKSPACE_OPENCODE_SKILLS_MANIFEST" ]; then
+        workspace_skills_clean=false
+    fi
 
-    # HIST-005: manifest entries are prefix-qualified (e.g. 'gla-pre-commit')
-    # while source names are bare ('pre-commit'). Compare against the prefixed
-    # form — otherwise flipping $SKILL_PREFIX (or using the default) would make
-    # staleness-skip permanently fail.
-    local _sp="${SKILL_PREFIX:-}"
-    if [ -f "$SKILLS_MANIFEST" ]; then
-        local expected_skill
-        for expected_skill in "$RULES_HOME/skills"/*/; do
-            [ -d "$expected_skill" ] || continue
-            grep -qx "${_sp}$(basename "$expected_skill")" "$SKILLS_MANIFEST" 2>/dev/null || { skills_ok=false; break; }
-        done
-        if $skills_ok && [ -d "$RULES_HOME/extras" ]; then
-            local extras_dir
-            for extras_dir in "$RULES_HOME/extras"/*/; do
-                [ -d "$extras_dir/skills" ] || continue
-                for expected_skill in "$extras_dir/skills"/*/; do
-                    [ -d "$expected_skill" ] || continue
-                    grep -qx "${_sp}$(basename "$expected_skill")" "$SKILLS_MANIFEST" 2>/dev/null || { skills_ok=false; break 2; }
-                done
-            done
-        fi
-    else
-        [ "$(ls -d "$RULES_HOME/skills/"*/ 2>/dev/null)" ] && skills_ok=false
+    # HIST-005 + global-skill strategy: skill manifests are prefix-qualified and
+    # now live in user-global target dirs. Staleness must check every enabled
+    # tool's global manifest and target directories; otherwise a deleted global
+    # target could be missed just because the workspace-local rule hash is
+    # unchanged.
+    if source_skills_exist; then
+        skill_deploy_complete "$SKILLS_MANIFEST" "$GLOBAL_CURSOR_SKILLS_DIR" || skills_ok=false
+        [ "$CC_MODE" != "off" ] && { skill_deploy_complete "$CC_SKILLS_MANIFEST" "$GLOBAL_CC_SKILLS_DIR" || skills_ok=false; }
+        [ "$CODEX_MODE" = "native" ] && {
+            skill_deploy_complete "$CODEX_SKILLS_MANIFEST" "$GLOBAL_CODEX_SKILLS_DIR" || skills_ok=false
+            skill_deploy_complete "$AGENTS_SKILLS_MANIFEST" "$GLOBAL_AGENTS_SKILLS_DIR" || skills_ok=false
+        }
+        [ "${OPENCODE_MODE:-native}" = "native" ] && { skill_deploy_complete "$OPENCODE_SKILLS_MANIFEST" "$GLOBAL_OPENCODE_SKILLS_DIR" || skills_ok=false; }
     fi
 
     # Mode-aware required artifacts. HIST-004: CLAUDE.md no longer tracked
@@ -236,7 +273,8 @@ check_staleness() {
     local legacy_ok=true
     $agents_required && ! $agents_exists && legacy_ok=false
 
-    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $legacy_ok && $skills_ok && $cc_rules_ok && $codex_config_ok && $opencode_config_ok; then
+    if [ "$CURRENT_HASH" = "$stored_hash" ] && $cursor_exists && $legacy_ok && $skills_ok \
+        && $workspace_skills_clean && $cc_rules_ok && $codex_config_ok && $opencode_config_ok; then
         _ok "Rules up to date. No sync needed."
         exit 0
     fi

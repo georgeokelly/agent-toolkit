@@ -1,21 +1,14 @@
-# lib/clean.sh — Full cleanup of all generated files
+# lib/clean.sh — Cleanup for project-scoped generated files
 # Sourced by agent-sync.sh. Do not execute directly.
 
 do_clean() {
-    echo "Cleaning generated files in $PROJECT_DIR ..."
+    echo "Cleaning project-scoped generated files in $PROJECT_DIR ..."
+    cleanup_legacy_workspace_skills
 
     if [ -d "$PROJECT_DIR/.cursor/rules" ]; then
         rm -f "$PROJECT_DIR/.cursor/rules/"*.mdc
         rmdir "$PROJECT_DIR/.cursor/rules" 2>/dev/null || true
         echo "  Removed .cursor/rules/*.mdc"
-    fi
-
-    if [ -f "$SKILLS_MANIFEST" ]; then
-        clean_manifest "$SKILLS_MANIFEST" "$PROJECT_DIR/.cursor/skills" "dirs"
-        rmdir "$PROJECT_DIR/.cursor/skills" 2>/dev/null || true
-        echo "  Removed agent-sync managed skills"
-    elif [ -d "$PROJECT_DIR/.cursor/skills" ]; then
-        _warn "  WARNING: .cursor/skills/ exists but no manifest found."
     fi
 
     # HIST-006: Cursor subagents under .cursor/agents/. Manifest-gated so
@@ -52,14 +45,6 @@ do_clean() {
         _warn "  WARNING: .claude/rules/ exists but no manifest found."
     fi
 
-    if [ -f "$CC_SKILLS_MANIFEST" ]; then
-        clean_manifest "$CC_SKILLS_MANIFEST" "$PROJECT_DIR/.claude/skills" "dirs"
-        rmdir "$PROJECT_DIR/.claude/skills" 2>/dev/null || true
-        echo "  Removed agent-sync managed CC skills"
-    elif [ -d "$PROJECT_DIR/.claude/skills" ]; then
-        _warn "  WARNING: .claude/skills/ exists but no manifest found."
-    fi
-
     # HIST-006: CC subagents under .claude/agents/.
     if [ -f "$CC_SUBAGENTS_MANIFEST" ]; then
         clean_manifest "$CC_SUBAGENTS_MANIFEST" "$PROJECT_DIR/.claude/agents" "files"
@@ -79,14 +64,6 @@ do_clean() {
         echo "  Removed .codex/config.toml (agent-sync managed)"
     elif [ -f "$PROJECT_DIR/.codex/config.toml" ]; then
         _warn "  SKIP: .codex/config.toml is not managed by agent-sync — left intact."
-    fi
-
-    if [ -f "$CODEX_SKILLS_MANIFEST" ]; then
-        clean_manifest "$CODEX_SKILLS_MANIFEST" "$PROJECT_DIR/.agents/skills" "dirs"
-        rmdir "$PROJECT_DIR/.agents/skills" 2>/dev/null || true
-        echo "  Removed agent-sync managed Codex skills"
-    elif [ -d "$PROJECT_DIR/.agents/skills" ]; then
-        _warn "  WARNING: .agents/skills/ exists but no manifest found."
     fi
 
     # HIST-006: Codex subagents under .agents/agents/.
@@ -113,14 +90,6 @@ do_clean() {
         echo "  Removed opencode.json (agent-sync managed)"
     elif [ -f "$PROJECT_DIR/opencode.json" ]; then
         _warn "  SKIP: opencode.json is not managed by agent-sync — left intact."
-    fi
-
-    if [ -f "$OPENCODE_SKILLS_MANIFEST" ]; then
-        clean_manifest "$OPENCODE_SKILLS_MANIFEST" "$PROJECT_DIR/.opencode/skills" "dirs"
-        rmdir "$PROJECT_DIR/.opencode/skills" 2>/dev/null || true
-        echo "  Removed agent-sync managed OpenCode skills"
-    elif [ -d "$PROJECT_DIR/.opencode/skills" ]; then
-        _warn "  WARNING: .opencode/skills/ exists but no manifest found."
     fi
 
     if [ -f "$OPENCODE_SUBAGENTS_MANIFEST" ]; then

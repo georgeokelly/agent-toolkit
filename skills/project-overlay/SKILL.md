@@ -111,4 +111,4 @@ The proposal should fit the development intent. Example:
   no monolithic CLAUDE.md is generated)
 - **Codex**: root-level `AGENTS.override.md` (Codex-specific entrypoint since
   HIST-007; Cursor does not auto-inject it)
-- **OpenCode**: `opencode.json` + `.opencode/skills/` (HIST-006)
+- **OpenCode**: `opencode.json` + user-global OpenCode skills (HIST-006)

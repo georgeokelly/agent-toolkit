@@ -50,9 +50,12 @@ TOML
     echo "  Codex: .codex/config.toml deployed"
 }
 
-# Codex skills deployed to .agents/skills/ (repo-scoped discovery path per Codex docs).
+# Codex reads user-scoped skills from ~/.agents/skills. Keep the CODEX_HOME
+# mirror for compatibility with Codex's bundled skill-installer and clients that
+# still annotate or scan ~/.codex/skills.
 generate_codex_skills() {
-    deploy_artifacts "$RULES_HOME/skills" "$PROJECT_DIR/.agents/skills" "$CODEX_SKILLS_MANIFEST" "Codex Skills"
+    deploy_artifacts "$RULES_HOME/skills" "$GLOBAL_CODEX_SKILLS_DIR" "$CODEX_SKILLS_MANIFEST" "Global Codex Skills"
+    deploy_artifacts "$RULES_HOME/skills" "$GLOBAL_AGENTS_SKILLS_DIR" "$AGENTS_SKILLS_MANIFEST" "Global Agents Skills"
 }
 
 # Codex subagents (HIST-006, skeleton). Source:

@@ -72,6 +72,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
+TEST_HOME="$(mktemp -d)" || { echo "ERROR: mktemp failed" >&2; exit 1; }
+CLEANUP_DIRS+=("$TEST_HOME")
+export HOME="$TEST_HOME"
+export XDG_CONFIG_HOME="$HOME/.config"
+mkdir -p "$HOME/.cursor/skills-cursor"
+
+GLOBAL_CURSOR_SKILLS_DIR="$HOME/.cursor/skills"
+GLOBAL_CC_SKILLS_DIR="$HOME/.claude/skills"
+GLOBAL_CODEX_SKILLS_DIR="$HOME/.codex/skills"
+GLOBAL_AGENTS_SKILLS_DIR="$HOME/.agents/skills"
+GLOBAL_OPENCODE_SKILLS_DIR="$XDG_CONFIG_HOME/opencode/skills"
+
 new_project() {
     local dir
     dir="$(mktemp -d)" || { echo "ERROR: mktemp failed" >&2; exit 1; }
@@ -125,7 +137,7 @@ assert ".cursor/rules/ exists"         test -d "$P1/.cursor/rules"
 assert ".cursor/rules/ has .mdc"       test -n "$(ls "$P1/.cursor/rules/"*.mdc 2>/dev/null)"
 assert ".claude/rules/ exists"         test -d "$P1/.claude/rules"
 assert ".claude/rules/ has .md"        test -n "$(ls "$P1/.claude/rules/"*.md 2>/dev/null)"
-assert ".claude/skills/ exists"        test -d "$P1/.claude/skills"
+assert "No workspace .claude/skills/"  test ! -d "$P1/.claude/skills"
 assert "No CLAUDE.md (HIST-004)"       test ! -f "$P1/.agent-rules/CLAUDE.md"
 # HIST-007: root AGENTS.override.md is the new Codex entry point;
 # .agent-rules/ should be wiped on every sync.
@@ -135,8 +147,8 @@ assert "No legacy .agent-rules/ dir"        test ! -d "$P1/.agent-rules"
 assert ".codex/config.toml exists"     test -f "$P1/.codex/config.toml"
 assert ".codex/config.toml has child_agents_md"   grep -q 'child_agents_md = true' "$P1/.codex/config.toml"
 assert ".codex/config.toml no fallback_filenames" bash -c "! grep -q 'project_doc_fallback_filenames' '$P1/.codex/config.toml'"
-assert ".agents/skills/ exists"        test -d "$P1/.agents/skills"
-assert ".cursor/skills/ exists"        test -d "$P1/.cursor/skills"
+assert "No workspace .agents/skills/"  test ! -d "$P1/.agents/skills"
+assert "No workspace .cursor/skills/"  test ! -d "$P1/.cursor/skills"
 assert "No root CLAUDE.md"             test ! -f "$P1/CLAUDE.md"
 assert "No root AGENTS.md"             test ! -f "$P1/AGENTS.md"
 assert ".agent-sync-hash exists"       test -f "$P1/.agent-sync-hash"
@@ -145,15 +157,17 @@ assert ".agent-sync-hash exists"       test -f "$P1/.agent-sync-hash"
 # simple-review and pre-commit are cross-tool replacements for the decommissioned
 # commands/ subsystem; if either goes missing on default sync the refactor is broken.
 # HIST-005: default prefix 'gla-' — bare names must not appear, prefixed names must.
-assert "Cursor skill gla-simple-review"    test -d "$P1/.cursor/skills/gla-simple-review"
-assert "Cursor skill gla-pre-commit"       test -d "$P1/.cursor/skills/gla-pre-commit"
-assert "CC skill gla-simple-review"        test -d "$P1/.claude/skills/gla-simple-review"
-assert "CC skill gla-pre-commit"           test -d "$P1/.claude/skills/gla-pre-commit"
-assert "Codex skill gla-simple-review"     test -d "$P1/.agents/skills/gla-simple-review"
-assert "Codex skill gla-pre-commit"        test -d "$P1/.agents/skills/gla-pre-commit"
-assert "No bare Cursor skill pre-commit"   test ! -d "$P1/.cursor/skills/pre-commit"
-assert "No bare CC skill pre-commit"       test ! -d "$P1/.claude/skills/pre-commit"
-assert "No bare Codex skill pre-commit"    test ! -d "$P1/.agents/skills/pre-commit"
+assert "Global Cursor skill gla-simple-review"    test -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-simple-review"
+assert "Global Cursor skill gla-pre-commit"       test -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
+assert "Cursor managed skills-cursor untouched"   test ! -d "$HOME/.cursor/skills-cursor/gla-pre-commit"
+assert "Global CC skill gla-simple-review"        test -d "$GLOBAL_CC_SKILLS_DIR/gla-simple-review"
+assert "Global CC skill gla-pre-commit"           test -d "$GLOBAL_CC_SKILLS_DIR/gla-pre-commit"
+assert "Global Codex skill gla-simple-review"     test -d "$GLOBAL_CODEX_SKILLS_DIR/gla-simple-review"
+assert "Global Codex skill gla-pre-commit"        test -d "$GLOBAL_CODEX_SKILLS_DIR/gla-pre-commit"
+assert "Global agents skill gla-pre-commit"       test -d "$GLOBAL_AGENTS_SKILLS_DIR/gla-pre-commit"
+assert "No bare global Cursor skill pre-commit"   test ! -d "$GLOBAL_CURSOR_SKILLS_DIR/pre-commit"
+assert "No bare global CC skill pre-commit"       test ! -d "$GLOBAL_CC_SKILLS_DIR/pre-commit"
+assert "No bare global Codex skill pre-commit"    test ! -d "$GLOBAL_CODEX_SKILLS_DIR/pre-commit"
 
 # Orphan regression guard (HIST-003): pre-refactor 30-review-criteria.mdc must
 # not be generated on a fresh sync.
@@ -179,6 +193,14 @@ echo ""
 echo "=== T2: Staleness skip ==="
 T2_OUT=$("$AGENT_SYNC" "$P1" 2>&1 || true)
 assert_output_match "Reports up to date" "[Uu]p to date" "$T2_OUT"
+
+# ===== T2b: Staleness detects missing global skill dirs =====
+
+echo ""
+echo "=== T2b: Staleness regenerates deleted global skill dir ==="
+rm -rf "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
+"$AGENT_SYNC" "$P1" >/dev/null 2>&1 || true
+assert "Deleted global Cursor skill restored" test -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
 
 # ===== T3: agent-check passes on default sync =====
 
@@ -332,9 +354,9 @@ assert "cc-rules did not touch .cursor/rules/"  test ! -d "$P11/.cursor/rules"
 
 "$AGENT_SYNC" cc-skills "$P11" >/dev/null 2>&1 || true
 
-assert "cc-skills produced .claude/skills/"  test -d "$P11/.claude/skills"
-assert "cc-skills deployed gla-simple-review"    test -d "$P11/.claude/skills/gla-simple-review"
-assert "cc-skills deployed gla-pre-commit"       test -d "$P11/.claude/skills/gla-pre-commit"
+assert "cc-skills did not produce workspace .claude/skills/" test ! -d "$P11/.claude/skills"
+assert "cc-skills deployed global gla-simple-review"    test -d "$GLOBAL_CC_SKILLS_DIR/gla-simple-review"
+assert "cc-skills deployed global gla-pre-commit"       test -d "$GLOBAL_CC_SKILLS_DIR/gla-pre-commit"
 assert "cc-skills still no .cursor/rules/"   test ! -d "$P11/.cursor/rules"
 
 # ===== T12: Legacy .claude/commands/ stamp-gated cleanup (HIST-003) =====
@@ -521,11 +543,13 @@ P19A="$(new_project)"
 write_overlay "$P19A"
 "$AGENT_SYNC" "$P19A" >/dev/null 2>&1 || true
 
-assert "T19a: Cursor skill dir prefixed"          test -d "$P19A/.cursor/skills/gla-pre-commit"
-assert "T19a: CC skill dir prefixed"              test -d "$P19A/.claude/skills/gla-pre-commit"
-assert "T19a: Codex skill dir prefixed"           test -d "$P19A/.agents/skills/gla-pre-commit"
-assert "T19a: Frontmatter name: prefixed"         grep -q '^name: gla-pre-commit' "$P19A/.cursor/skills/gla-pre-commit/SKILL.md"
-assert "T19a: Manifest records prefixed name"     grep -qx 'gla-pre-commit' "$P19A/.cursor/skills/.agent-sync-skills-manifest"
+assert "T19a: Global Cursor skill dir prefixed"   test -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
+assert "T19a: Global CC skill dir prefixed"       test -d "$GLOBAL_CC_SKILLS_DIR/gla-pre-commit"
+assert "T19a: Global Codex skill dir prefixed"    test -d "$GLOBAL_CODEX_SKILLS_DIR/gla-pre-commit"
+assert "T19a: Global agents skill dir prefixed"   test -d "$GLOBAL_AGENTS_SKILLS_DIR/gla-pre-commit"
+assert "T19a: No workspace Cursor skill dir"      test ! -d "$P19A/.cursor/skills/gla-pre-commit"
+assert "T19a: Frontmatter name: prefixed"         grep -q '^name: gla-pre-commit' "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit/SKILL.md"
+assert "T19a: Manifest records prefixed name"     grep -qx 'gla-pre-commit' "$GLOBAL_CURSOR_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
 
 # T19b: idempotency — second sync must not double-prefix (no 'gla-gla-pre-commit').
 echo ""
@@ -533,8 +557,8 @@ echo "=== T19b: Idempotent re-sync (no double-prefix) ==="
 "$AGENT_SYNC" "$P19A" >/dev/null 2>&1 || true
 "$AGENT_SYNC" cc-skills "$P19A" >/dev/null 2>&1 || true
 
-assert "T19b: No double-prefixed dir"             test ! -d "$P19A/.cursor/skills/gla-gla-pre-commit"
-assert "T19b: No double-prefixed frontmatter"     bash -c "! grep -q '^name: gla-gla-' '$P19A/.cursor/skills/gla-pre-commit/SKILL.md'"
+assert "T19b: No double-prefixed dir"             test ! -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-gla-pre-commit"
+assert "T19b: No double-prefixed frontmatter"     bash -c "! grep -q '^name: gla-gla-' '$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit/SKILL.md'"
 
 # T19c: custom prefix from overlay, auto-dash applied to bare token.
 echo ""
@@ -547,9 +571,9 @@ awk '{print} /^\*\*Codex Mode\*\*:/ && !done {print "**Skill Prefix**: myproj"; 
 mv "$P19C/.agent-local.md.new" "$P19C/.agent-local.md"
 "$AGENT_SYNC" "$P19C" >/dev/null 2>&1 || true
 
-assert "T19c: Custom prefix applied (auto-dash)"  test -d "$P19C/.cursor/skills/myproj-pre-commit"
-assert "T19c: Frontmatter uses custom prefix"     grep -q '^name: myproj-pre-commit' "$P19C/.cursor/skills/myproj-pre-commit/SKILL.md"
-assert "T19c: No default gla- dir leaked"         test ! -d "$P19C/.cursor/skills/gla-pre-commit"
+assert "T19c: Custom prefix applied (auto-dash)"  test -d "$GLOBAL_CURSOR_SKILLS_DIR/myproj-pre-commit"
+assert "T19c: Frontmatter uses custom prefix"     grep -q '^name: myproj-pre-commit' "$GLOBAL_CURSOR_SKILLS_DIR/myproj-pre-commit/SKILL.md"
+assert "T19c: No default gla- dir leaked"         test ! -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
 
 # T19d: opt-out via 'none' — bare names deployed, frontmatter untouched.
 echo ""
@@ -561,9 +585,9 @@ awk '{print} /^\*\*Codex Mode\*\*:/ && !done {print "**Skill Prefix**: none"; do
 mv "$P19D/.agent-local.md.new" "$P19D/.agent-local.md"
 "$AGENT_SYNC" "$P19D" >/dev/null 2>&1 || true
 
-assert "T19d: Bare skill dir deployed"            test -d "$P19D/.cursor/skills/pre-commit"
-assert "T19d: Frontmatter bare name"              grep -q '^name: pre-commit' "$P19D/.cursor/skills/pre-commit/SKILL.md"
-assert "T19d: No gla- dir produced"               test ! -d "$P19D/.cursor/skills/gla-pre-commit"
+assert "T19d: Bare skill dir deployed"            test -d "$GLOBAL_CURSOR_SKILLS_DIR/pre-commit"
+assert "T19d: Frontmatter bare name"              grep -q '^name: pre-commit' "$GLOBAL_CURSOR_SKILLS_DIR/pre-commit/SKILL.md"
+assert "T19d: No gla- dir produced"               test ! -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
 
 # T19e: prefix switch cleans the previous generation.
 # Start with default gla-, then flip to 'myproj-', resync. Old gla-* dirs must
@@ -573,7 +597,7 @@ echo "=== T19e: Prefix switch cleans previous generation ==="
 P19E="$(new_project)"
 write_overlay "$P19E"
 "$AGENT_SYNC" "$P19E" >/dev/null 2>&1 || true
-assert "T19e: Default gla- dir exists"            test -d "$P19E/.cursor/skills/gla-pre-commit"
+assert "T19e: Default gla- dir exists"            test -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
 
 awk '{print} /^\*\*Codex Mode\*\*:/ && !done {print "**Skill Prefix**: myproj-"; done=1}' \
     "$P19E/.agent-local.md" > "$P19E/.agent-local.md.new"
@@ -581,12 +605,13 @@ mv "$P19E/.agent-local.md.new" "$P19E/.agent-local.md"
 rm -f "$P19E/.agent-sync-hash"  # force re-sync (overlay-only change)
 "$AGENT_SYNC" "$P19E" >/dev/null 2>&1 || true
 
-assert "T19e: Switched to myproj- dir"            test -d "$P19E/.cursor/skills/myproj-pre-commit"
-assert "T19e: Stale gla- dir removed"             test ! -d "$P19E/.cursor/skills/gla-pre-commit"
+assert "T19e: Switched to myproj- dir"            test -d "$GLOBAL_CURSOR_SKILLS_DIR/myproj-pre-commit"
+assert "T19e: Stale gla- dir removed"             test ! -d "$GLOBAL_CURSOR_SKILLS_DIR/gla-pre-commit"
 
 # ===== T20: HIST-006 — OpenCode Mode=native full sync =====
 # Default OpenCode Mode is 'native'. A full sync must produce a stamp-gated
-# opencode.json at project root, plus .opencode/skills/ and .opencode/agent/.
+# opencode.json at project root, plus user-global OpenCode skills and
+# .opencode/agent/.
 # Subagent source directories are empty upstream, so .opencode/agent/ should
 # only be created when deploy_subagent_files has something to emit — test
 # accordingly (no assertion that the dir exists unconditionally).
@@ -602,16 +627,16 @@ assert "T20: opencode.json has no legacy marker" bash -c "! grep -q '_generated_
 assert "T20: opencode.json stamp exists"         test -f "$P20/.opencode/.config-json-agent-sync"
 assert "T20: opencode.json references Cursor"    grep -q '\.cursor/rules/\*\.mdc' "$P20/opencode.json"
 assert "T20: opencode.json references CC rules"  grep -q '\.claude/rules/\*\.md' "$P20/opencode.json"
-assert "T20: OpenCode skills dir exists"         test -d "$P20/.opencode/skills"
-assert "T20: OpenCode skill gla-pre-commit"      test -d "$P20/.opencode/skills/gla-pre-commit"
-assert "T20: OpenCode skill gla-simple-review"   test -d "$P20/.opencode/skills/gla-simple-review"
-assert "T20: OpenCode skill manifest exists"     test -f "$P20/.opencode/skills/.agent-sync-skills-manifest"
-assert "T20: OpenCode skill frontmatter prefixed" grep -q '^name: gla-pre-commit' "$P20/.opencode/skills/gla-pre-commit/SKILL.md"
+assert "T20: no workspace OpenCode skills dir"   test ! -d "$P20/.opencode/skills"
+assert "T20: global OpenCode skill gla-pre-commit"      test -d "$GLOBAL_OPENCODE_SKILLS_DIR/gla-pre-commit"
+assert "T20: global OpenCode skill gla-simple-review"   test -d "$GLOBAL_OPENCODE_SKILLS_DIR/gla-simple-review"
+assert "T20: global OpenCode skill manifest exists"     test -f "$GLOBAL_OPENCODE_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
+assert "T20: global OpenCode skill frontmatter prefixed" grep -q '^name: gla-pre-commit' "$GLOBAL_OPENCODE_SKILLS_DIR/gla-pre-commit/SKILL.md"
 assert "T20: agent-check passes"                 "$AGENT_CHECK" "$P20"
 
 # ===== T21: HIST-006 — OpenCode Mode=off reconcile =====
 # Flipping to 'off' must remove the stamp-gated opencode.json and clear
-# .opencode/skills + .opencode/agent. Staleness hash must invalidate so the
+# project-scoped .opencode artifacts. Staleness hash must invalidate so the
 # next sync executes (we don't gate on hash here because overlay change is
 # hash-tracked).
 
@@ -731,7 +756,8 @@ assert "T24: opencode-config did not write skills"    test ! -d "$P24/.opencode/
 P24B="$(new_project)"
 write_overlay "$P24B"
 "$AGENT_SYNC" opencode-skills "$P24B" >/dev/null 2>&1 || true
-assert "T24b: opencode-skills wrote .opencode/skills" test -d "$P24B/.opencode/skills/gla-pre-commit"
+assert "T24b: opencode-skills wrote global OpenCode skills" test -d "$GLOBAL_OPENCODE_SKILLS_DIR/gla-pre-commit"
+assert "T24b: opencode-skills did not write workspace skills" test ! -d "$P24B/.opencode/skills"
 assert "T24b: opencode-skills did not write JSON"     test ! -f "$P24B/opencode.json"
 
 # Umbrella subagents target — must succeed with exit 0 even though no

@@ -50,7 +50,7 @@ generate_cursor() {
 }
 
 generate_skills() {
-    deploy_artifacts "$RULES_HOME/skills" "$PROJECT_DIR/.cursor/skills" "$SKILLS_MANIFEST" "Skills"
+    deploy_artifacts "$RULES_HOME/skills" "$GLOBAL_CURSOR_SKILLS_DIR" "$SKILLS_MANIFEST" "Global Cursor Skills"
 }
 
 # Cursor subagents (HIST-006, skeleton). Source:

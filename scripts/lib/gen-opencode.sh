@@ -6,8 +6,8 @@
 #   - opencode.json at project root (instructions globs reuse existing rule
 #     files — no second rule compilation, because the same sources already
 #     feed Cursor and Claude Code)
-#   - .opencode/skills/<prefix><name>/SKILL.md (skill deploy parity with the
-#     other tools; prefix behavior from HIST-005)
+#   - user-global OpenCode skills under ~/.config/opencode/skills/
+#     (prefix behavior from HIST-005)
 #   - .opencode/agent/<prefix><name>.md (subagent skeleton — no-op until
 #     subagents/opencode/ is populated; see deploy_subagent_files)
 #
@@ -84,10 +84,9 @@ JSON
     echo "  OpenCode: opencode.json deployed"
 }
 
-# OpenCode skills deployed to .opencode/skills/ (directory-based, same layout
-# as .cursor/skills/ and .claude/skills/).
+# OpenCode skills deployed to the user-global OpenCode config directory.
 generate_opencode_skills() {
-    deploy_artifacts "$RULES_HOME/skills" "$PROJECT_DIR/.opencode/skills" "$OPENCODE_SKILLS_MANIFEST" "OpenCode Skills"
+    deploy_artifacts "$RULES_HOME/skills" "$GLOBAL_OPENCODE_SKILLS_DIR" "$OPENCODE_SKILLS_MANIFEST" "Global OpenCode Skills"
 }
 
 # OpenCode subagents deployed to .opencode/agent/ (OpenCode's native

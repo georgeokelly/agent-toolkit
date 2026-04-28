@@ -11,17 +11,17 @@ set -euo pipefail
 #   4. Staleness (rules repo newer than generated files)
 #   5. File existence (root AGENTS.override.md present, legacy paths absent)
 #   6. Core .mdc semantic validation (alwaysApply must be true)
-#   7. Skills deployment validation (manifest + directory integrity)
+#   7. Global skills deployment validation (manifest + directory integrity)
 #   8. Worktrees.json deployment validation
 #   9. .vscode/settings.json validity (if exists)
 #  10. CC rules validation (.claude/rules/ frontmatter, when CC Mode != off)
-#  11. CC skills deployment validation (when CC Mode != off)
+#  11. Global CC skills deployment validation (when CC Mode != off)
 #  12. CC/Cursor consistency (rules count, skills set match)
 #  13. Codex .codex/config.toml validation (child_agents_md, no fallback) — HIST-007
-#  14. Codex skills deployment validation (when Codex Mode = native)
+#  14. Global Codex skills deployment validation (when Codex Mode = native)
 #  15. Codex/CC/Cursor skills consistency (when Codex Mode = native)
 #  16. OpenCode opencode.json validation (when OpenCode Mode = native) — HIST-006
-#  17. OpenCode skills deployment validation (when OpenCode Mode = native)
+#  17. Global OpenCode skills deployment validation (when OpenCode Mode = native)
 #  18. OpenCode/CC/Cursor skills consistency (when OpenCode Mode = native)
 
 show_help() {
@@ -47,17 +47,17 @@ CHECKS PERFORMED
     4. Staleness detection (rules repo newer than generated files)
     5. Generated file existence (root AGENTS.override.md, legacy paths absent)
     6. Core .mdc alwaysApply validation (core rules must be always-on)
-    7. Skills deployment validation (manifest + directory integrity)
+    7. Global skills deployment validation (manifest + directory integrity)
     8. Worktrees.json deployment validation
     9. .vscode/settings.json validity
    10. CC rules validation (when CC Mode != off)
-   11. CC skills deployment validation (when CC Mode != off)
+   11. Global CC skills deployment validation (when CC Mode != off)
    12. CC/Cursor consistency (when CC Mode != off)
    13. Codex .codex/config.toml validation (when Codex Mode = native)
-   14. Codex skills deployment validation (when Codex Mode = native)
+   14. Global Codex skills deployment validation (when Codex Mode = native)
    15. Codex/CC/Cursor skills consistency (when Codex Mode = native)
    16. OpenCode opencode.json validation (when OpenCode Mode = native)
-   17. OpenCode skills deployment validation (when OpenCode Mode = native)
+   17. Global OpenCode skills deployment validation (when OpenCode Mode = native)
    18. OpenCode/CC/Cursor skills consistency (when OpenCode Mode = native)
 
 EXAMPLES
@@ -330,7 +330,7 @@ fi
 # --- 7. Skills deployment validation ---
 
 echo ""
-echo "[7/$TOTAL_CHECKS] Skills deployment validation"
+echo "[7/$TOTAL_CHECKS] Global skills deployment validation"
 
 # SKILLS_MANIFEST is defined globally in lib/paths.sh.
 SKILLS_SRC="$RULES_HOME/skills"
@@ -346,11 +346,11 @@ if $HAS_SOURCE_SKILLS; then
         while IFS= read -r skill_name; do
             [ -z "$skill_name" ] && continue
             SKILLS_CHECKED=$((SKILLS_CHECKED + 1))
-            skill_dir="$PROJECT_DIR/.cursor/skills/$skill_name"
+            skill_dir="$GLOBAL_CURSOR_SKILLS_DIR/$skill_name"
             if [ -d "$skill_dir" ] && [ "$(ls -A "$skill_dir" 2>/dev/null)" ]; then
-                pass "Skill '$skill_name' deployed and non-empty"
+                pass "Global Cursor skill '$skill_name' deployed and non-empty"
             else
-                fail "Skill '$skill_name' listed in manifest but missing or empty"
+                fail "Global Cursor skill '$skill_name' listed in manifest but missing or empty"
                 SKILLS_OK=false
             fi
         done < "$SKILLS_MANIFEST"
@@ -360,7 +360,7 @@ if $HAS_SOURCE_SKILLS; then
             pass "All $SKILLS_CHECKED manifest skills are deployed"
         fi
     else
-        fail "Rules repo has skills but .agent-sync-skills-manifest not found. Run agent-sync."
+        fail "Rules repo has skills but global Cursor skills manifest not found. Run agent-sync."
     fi
 else
     pass "No skills in rules repo (nothing to validate)"
@@ -470,7 +470,7 @@ fi
 # --- 11. CC skills validation ---
 
 echo ""
-echo "[11/$TOTAL_CHECKS] CC skills deployment validation"
+echo "[11/$TOTAL_CHECKS] Global CC skills deployment validation"
 
 # CC_SKILLS_MANIFEST is defined globally in lib/paths.sh.
 CC_HAS_SOURCE_SKILLS=false
@@ -485,7 +485,7 @@ if $CC_HAS_SOURCE_SKILLS; then
         while IFS= read -r cc_skill_name; do
             [ -z "$cc_skill_name" ] && continue
             CC_SKILLS_CHECKED=$((CC_SKILLS_CHECKED + 1))
-            cc_skill_dir="$PROJECT_DIR/.claude/skills/$cc_skill_name"
+            cc_skill_dir="$GLOBAL_CC_SKILLS_DIR/$cc_skill_name"
             if [ -d "$cc_skill_dir" ] && [ "$(ls -A "$cc_skill_dir" 2>/dev/null)" ]; then
                 pass "CC skill '$cc_skill_name' deployed"
             else
@@ -499,7 +499,7 @@ if $CC_HAS_SOURCE_SKILLS; then
             pass "All $CC_SKILLS_CHECKED CC skills are deployed"
         fi
     else
-        fail "Rules repo has skills but CC skills manifest not found. Run agent-sync."
+        fail "Rules repo has skills but global CC skills manifest not found. Run agent-sync."
     fi
 else
     pass "No skills in rules repo (CC skills: nothing to validate)"
@@ -610,7 +610,7 @@ fi
 # --- 14. Codex skills validation ---
 
 echo ""
-echo "[$((CODEX_BASE + 2))/$TOTAL_CHECKS] Codex skills deployment validation"
+echo "[$((CODEX_BASE + 2))/$TOTAL_CHECKS] Global Codex skills deployment validation"
 
 # CODEX_SKILLS_MANIFEST is defined globally in lib/paths.sh.
 CODEX_HAS_SOURCE_SKILLS=false
@@ -625,11 +625,11 @@ if $CODEX_HAS_SOURCE_SKILLS; then
         while IFS= read -r codex_skill_name; do
             [ -z "$codex_skill_name" ] && continue
             CODEX_SKILLS_CHECKED=$((CODEX_SKILLS_CHECKED + 1))
-            codex_skill_dir="$PROJECT_DIR/.agents/skills/$codex_skill_name"
+            codex_skill_dir="$GLOBAL_CODEX_SKILLS_DIR/$codex_skill_name"
             if [ -d "$codex_skill_dir" ] && [ "$(ls -A "$codex_skill_dir" 2>/dev/null)" ]; then
-                pass "Codex skill '$codex_skill_name' deployed"
+                pass "Global Codex skill '$codex_skill_name' deployed"
             else
-                fail "Codex skill '$codex_skill_name' listed in manifest but missing or empty"
+                fail "Global Codex skill '$codex_skill_name' listed in manifest but missing or empty"
                 CODEX_SKILLS_OK=false
             fi
         done < "$CODEX_SKILLS_MANIFEST"
@@ -639,7 +639,30 @@ if $CODEX_HAS_SOURCE_SKILLS; then
             pass "All $CODEX_SKILLS_CHECKED Codex skills are deployed"
         fi
     else
-        fail "Rules repo has skills but Codex skills manifest not found. Run agent-sync."
+        fail "Rules repo has skills but global Codex skills manifest not found. Run agent-sync."
+    fi
+
+    if [ -f "$AGENTS_SKILLS_MANIFEST" ]; then
+        AGENTS_SKILLS_OK=true
+        AGENTS_SKILLS_CHECKED=0
+        while IFS= read -r agents_skill_name; do
+            [ -z "$agents_skill_name" ] && continue
+            AGENTS_SKILLS_CHECKED=$((AGENTS_SKILLS_CHECKED + 1))
+            agents_skill_dir="$GLOBAL_AGENTS_SKILLS_DIR/$agents_skill_name"
+            if [ -d "$agents_skill_dir" ] && [ "$(ls -A "$agents_skill_dir" 2>/dev/null)" ]; then
+                pass "Global agents-compatible skill '$agents_skill_name' deployed"
+            else
+                fail "Global agents-compatible skill '$agents_skill_name' listed in manifest but missing or empty"
+                AGENTS_SKILLS_OK=false
+            fi
+        done < "$AGENTS_SKILLS_MANIFEST"
+        if [ "$AGENTS_SKILLS_CHECKED" -eq 0 ]; then
+            fail "Agents-compatible skills manifest exists but is empty. Run agent-sync."
+        elif $AGENTS_SKILLS_OK; then
+            pass "All $AGENTS_SKILLS_CHECKED agents-compatible skills are deployed"
+        fi
+    else
+        fail "Rules repo has skills but global agents-compatible skills manifest not found. Run agent-sync."
     fi
 else
     pass "No skills in rules repo (Codex skills: nothing to validate)"
@@ -669,6 +692,15 @@ if [ -f "$CODEX_SKILLS_MANIFEST" ] && [ -f "$CC_SKILLS_MANIFEST" ]; then
         pass "Codex and CC skill sets match"
     else
         warn "Codex and CC skill sets differ — check agent-sync output"
+    fi
+fi
+if [ -f "$CODEX_SKILLS_MANIFEST" ] && [ -f "$AGENTS_SKILLS_MANIFEST" ]; then
+    CODEX_VS_AGENTS_AGENTS_SET=$(sort "$AGENTS_SKILLS_MANIFEST" | tr '\n' ',')
+    CODEX_VS_AGENTS_CODEX_SET=$(sort "$CODEX_SKILLS_MANIFEST" | tr '\n' ',')
+    if [ "$CODEX_VS_AGENTS_AGENTS_SET" = "$CODEX_VS_AGENTS_CODEX_SET" ]; then
+        pass "Codex and agents-compatible skill sets match"
+    else
+        warn "Codex and agents-compatible skill sets differ — check agent-sync output"
     fi
 fi
 
@@ -732,7 +764,7 @@ fi
 # --- 17. OpenCode skills validation ---
 
 echo ""
-echo "[$((OPENCODE_BASE + 2))/$TOTAL_CHECKS] OpenCode skills deployment validation"
+echo "[$((OPENCODE_BASE + 2))/$TOTAL_CHECKS] Global OpenCode skills deployment validation"
 
 # OPENCODE_SKILLS_MANIFEST is defined globally in lib/paths.sh.
 OPENCODE_HAS_SOURCE_SKILLS=false
@@ -747,11 +779,11 @@ if $OPENCODE_HAS_SOURCE_SKILLS; then
         while IFS= read -r opencode_skill_name; do
             [ -z "$opencode_skill_name" ] && continue
             OPENCODE_SKILLS_CHECKED=$((OPENCODE_SKILLS_CHECKED + 1))
-            opencode_skill_dir="$PROJECT_DIR/.opencode/skills/$opencode_skill_name"
+            opencode_skill_dir="$GLOBAL_OPENCODE_SKILLS_DIR/$opencode_skill_name"
             if [ -d "$opencode_skill_dir" ] && [ "$(ls -A "$opencode_skill_dir" 2>/dev/null)" ]; then
-                pass "OpenCode skill '$opencode_skill_name' deployed"
+                pass "Global OpenCode skill '$opencode_skill_name' deployed"
             else
-                fail "OpenCode skill '$opencode_skill_name' listed in manifest but missing or empty"
+                fail "Global OpenCode skill '$opencode_skill_name' listed in manifest but missing or empty"
                 OPENCODE_SKILLS_OK=false
             fi
         done < "$OPENCODE_SKILLS_MANIFEST"
@@ -761,7 +793,7 @@ if $OPENCODE_HAS_SOURCE_SKILLS; then
             pass "All $OPENCODE_SKILLS_CHECKED OpenCode skills are deployed"
         fi
     else
-        fail "Rules repo has skills but OpenCode skills manifest not found. Run agent-sync."
+        fail "Rules repo has skills but global OpenCode skills manifest not found. Run agent-sync."
     fi
 else
     pass "No skills in rules repo (OpenCode skills: nothing to validate)"

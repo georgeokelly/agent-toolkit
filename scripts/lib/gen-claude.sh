@@ -69,7 +69,7 @@ generate_cc_rules() {
 }
 
 generate_cc_skills() {
-    deploy_artifacts "$RULES_HOME/skills" "$PROJECT_DIR/.claude/skills" "$CC_SKILLS_MANIFEST" "CC Skills"
+    deploy_artifacts "$RULES_HOME/skills" "$GLOBAL_CC_SKILLS_DIR" "$CC_SKILLS_MANIFEST" "Global CC Skills"
 }
 
 # CC subagents (HIST-006, skeleton). Source:

@@ -173,7 +173,7 @@ Phase 1 + Phase 2 完成后，执行以下步骤：
   - Cursor: .cursor/rules/project-overlay.mdc（alwaysApply: true）
   - Claude Code: .claude/rules/*.md（HIST-004 原生 per-file）
   - Codex: 项目根 AGENTS.override.md（HIST-007 Codex 专属入口）
-  - OpenCode: opencode.json + .opencode/skills/（HIST-006）
+  - OpenCode: opencode.json + 用户全局 OpenCode skills（HIST-006）
 请执行 `agent-sync .` 生成上述文件。
 ```
 

@@ -9,8 +9,10 @@
 #
 # Convention: `*_MANIFEST` paths point at the per-tool manifest file; each
 # manifest enumerates the artifacts agent-sync owns under that subtree so
-# stale-cleanup is precise. `*_STAMP` paths are sentinel touch-files used
-# where in-file marker gating is impractical (e.g. .codex/config.toml).
+# stale-cleanup is precise. Skills are user-global by default, while rules,
+# config stamps, and subagents remain project-scoped. `*_STAMP` paths are
+# sentinel touch-files used where in-file marker gating is impractical
+# (e.g. .codex/config.toml).
 #
 # All variables are unconditional: even when a tool's mode is `off`, the
 # corresponding manifest path is still defined here so set -u doesn't trip
@@ -22,9 +24,23 @@
 HASH_FILE="$PROJECT_DIR/.agent-sync-hash"
 MANIFEST="$PROJECT_DIR/.agent-sync-manifest"
 
+# --- Global skill targets --------------------------------------------------
+
+_XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+# ~/.cursor/skills-cursor is Cursor-managed built-in content; user skills go in
+# ~/.cursor/skills unless explicitly overridden.
+GLOBAL_CURSOR_SKILLS_DIR="${CURSOR_SKILLS_DIR:-$HOME/.cursor/skills}"
+
+GLOBAL_CC_SKILLS_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
+GLOBAL_CODEX_SKILLS_DIR="${CODEX_SKILLS_DIR:-${CODEX_HOME:-$HOME/.codex}/skills}"
+GLOBAL_AGENTS_SKILLS_DIR="${AGENTS_SKILLS_DIR:-$HOME/.agents/skills}"
+GLOBAL_OPENCODE_SKILLS_DIR="${OPENCODE_SKILLS_DIR:-${OPENCODE_CONFIG_DIR:-$_XDG_CONFIG_HOME/opencode}/skills}"
+
 # --- Cursor manifests ------------------------------------------------------
 
-SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
+WORKSPACE_SKILLS_MANIFEST="$PROJECT_DIR/.cursor/skills/.agent-sync-skills-manifest"
+SKILLS_MANIFEST="$GLOBAL_CURSOR_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
 # HIST-006: Cursor subagents live in .cursor/agents/ (Cursor's native
 # per-project subagent convention).
 CURSOR_SUBAGENTS_MANIFEST="$PROJECT_DIR/.cursor/agents/.agent-sync-subagents-manifest"
@@ -32,13 +48,16 @@ CURSOR_SUBAGENTS_MANIFEST="$PROJECT_DIR/.cursor/agents/.agent-sync-subagents-man
 # --- Claude Code (CC) manifests --------------------------------------------
 
 CC_RULES_MANIFEST="$PROJECT_DIR/.claude/rules/.agent-sync-rules-manifest"
-CC_SKILLS_MANIFEST="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
+WORKSPACE_CC_SKILLS_MANIFEST="$PROJECT_DIR/.claude/skills/.agent-sync-skills-manifest"
+CC_SKILLS_MANIFEST="$GLOBAL_CC_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
 # HIST-006: Claude Code's subagent path is .claude/agents/ (one *.md per agent).
 CC_SUBAGENTS_MANIFEST="$PROJECT_DIR/.claude/agents/.agent-sync-subagents-manifest"
 
 # --- Codex manifests + stamps ----------------------------------------------
 
-CODEX_SKILLS_MANIFEST="$PROJECT_DIR/.agents/skills/.agent-sync-codex-skills-manifest"
+WORKSPACE_CODEX_SKILLS_MANIFEST="$PROJECT_DIR/.agents/skills/.agent-sync-codex-skills-manifest"
+CODEX_SKILLS_MANIFEST="$GLOBAL_CODEX_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
+AGENTS_SKILLS_MANIFEST="$GLOBAL_AGENTS_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
 CODEX_CONFIG_STAMP="$PROJECT_DIR/.codex/.config-toml-agent-sync"
 # HIST-006: Codex subagents live alongside skills under .agents/; the
 # dedicated .agents/agents/ subdir keeps them separate from the skill tree.
@@ -51,5 +70,6 @@ CODEX_SUBAGENTS_MANIFEST="$PROJECT_DIR/.agents/agents/.agent-sync-subagents-mani
 
 OPENCODE_CONFIG_STAMP="$PROJECT_DIR/.opencode/.config-json-agent-sync"
 OPENCODE_LEGACY_MARKER='"_generated_by": "agent-sync"'
-OPENCODE_SKILLS_MANIFEST="$PROJECT_DIR/.opencode/skills/.agent-sync-skills-manifest"
+WORKSPACE_OPENCODE_SKILLS_MANIFEST="$PROJECT_DIR/.opencode/skills/.agent-sync-skills-manifest"
+OPENCODE_SKILLS_MANIFEST="$GLOBAL_OPENCODE_SKILLS_DIR/.agent-toolkit-global-skills-manifest"
 OPENCODE_SUBAGENTS_MANIFEST="$PROJECT_DIR/.opencode/agent/.agent-sync-subagents-manifest"
